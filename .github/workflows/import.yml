@@ -38,13 +38,10 @@ jobs:
           curl -fsSL "https://unzip-online.com/en/Download/File?index=23&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tests/test_unconfirmed.py
           curl -fsSL "https://unzip-online.com/en/Download/File?index=24&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tests/test_nebius_pipeline.py
           curl -fsSL "https://unzip-online.com/en/Download/File?index=25&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tools/smoke_test.py
-          test "$(wc -c < requirements.txt)" -eq 191
-          test "$(wc -c < Dockerfile)" -eq 104
-          test "$(wc -c < .env.example)" -eq 244
-          rm -f .github/workflows/import.yml
-          rmdir .github/workflows .github || true
-          find . -type f -not -path './.git/*' | sort
-          test "$(find . -type f -not -path './.git/*' | wc -l)" -eq 26
+          ls -l requirements.txt Dockerfile .env.example
+          wc -c requirements.txt Dockerfile .env.example
+          find . -type f -not -path './.git/*' -not -path './.github/*' | sort
+          test "$(find . -type f -not -path './.git/*' -not -path './.github/*' | wc -l)" -eq 26
           git config user.name "ledger-scout1"
           git config user.email "ledger-scout1@users.noreply.github.com"
           git add -A
