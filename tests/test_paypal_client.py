@@ -1,371 +1,242 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-36038374-1"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
+"""Unit tests for the PayPal client with a fake HTTP layer (no network)."""
 
-        gtag('config', 'UA-36038374-1');
-    </script>
-    <link rel="icon" href="/favicon.ico"><!-- 32×32 -->
-    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+import sys
+import unittest
+from datetime import datetime, timezone
+from decimal import Decimal
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-            <link href="https://unzip-online.com/en/Zip" rel="alternate" hreflang="en" />
-            <link href="https://unzip-online.com/es/Zip" rel="alternate" hreflang="es" />
-            <link href="https://unzip-online.com/ru/Zip" rel="alternate" hreflang="ru" />
-            <link href="https://unzip-online.com/de/Zip" rel="alternate" hreflang="de" />
-            <link href="https://unzip-online.com/bn/Zip" rel="alternate" hreflang="bn" />
-            <link href="https://unzip-online.com/nl/Zip" rel="alternate" hreflang="nl" />
-            <link href="https://unzip-online.com/sv/Zip" rel="alternate" hreflang="sv" />
-            <link href="https://unzip-online.com/fr/Zip" rel="alternate" hreflang="fr" />
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <title>Uncompress file - unzip-online</title>
-    <link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="/css/site.css" />
-</head>
-<body>
-    <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-dark bg-dark border-bottom box-shadow mb-3">
-            <div class="container">
-                <a class="navbar-brand" href="/en"><img src="/logo.png" alt="source" style="width:30px; height:auto; margin-right:10px;" /> unzip-online.com</a>
-                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                        aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex" id="navbarSupportedContent">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/zip"> Unzip</a>
-                        </li>
-                        
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/about">About</a>
-                        </li>
-                    </ul>
-                        <ul class="navbar-nav ml-auto">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="https://unrar-online.com">Rar archive extractor </a>
-                                </li>
-                            <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle" href="#" id="dropdownLanguage" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Language</a>
-                                <div class="dropdown-menu" aria-labelledby="dropdownLanguage">
+from paypal_client import (REPORTING_SEARCH_SCOPE, PayPalClient,  # noqa: E402
+                           PayPalError, normalize_transaction)
 
 
-<a class="dropdown-item" href="/en/Zip" hreflang="en" rel="alternative">English(en)</a><a class="dropdown-item" href="/es/Zip" hreflang="es" rel="alternative">Spanish(es)</a><a class="dropdown-item" href="/ru/Zip" hreflang="ru" rel="alternative">Russian(ru)</a><a class="dropdown-item" href="/de/Zip" hreflang="de" rel="alternative">German(de)</a><a class="dropdown-item" href="/bn/Zip" hreflang="bn" rel="alternative">Bengali(bn)</a><a class="dropdown-item" href="/nl/Zip" hreflang="nl" rel="alternative">Dutch(nl)</a><a class="dropdown-item" href="/sv/Zip" hreflang="sv" rel="alternative">Swedish(sv)</a><a class="dropdown-item" href="/fr/Zip" hreflang="fr" rel="alternative">French(fr)</a>                                </div>
-                            </li>
-                        </ul>
-                </div>
-            </div>
-        </nav>
-    </header>
-    <div class="container">
-        <main role="main" class="pb-3">
-            
-<div class="page-header zip-hero">
-    <h1 class="zip-hero-title">Uncompress file</h1>
-</div>
+class FakeResponse:
+    def __init__(self, status=200, body=None):
+        self.status_code = status
+        self._body = body or {}
+        self.content = b"{}" if body is not None else b""
+
+    def json(self):
+        return self._body
 
 
+class FakeHTTP:
+    """Records requests and replays queued responses per URL fragment."""
+
+    def __init__(self):
+        self.calls = []
+        self.routes = []
+
+    def when(self, fragment, response):
+        self.routes.append((fragment, response))
+        return self
+
+    def request(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs))
+        for fragment, response in self.routes:
+            if fragment in url:
+                if callable(response):
+                    return response(method, url, kwargs)
+                return response
+        return FakeResponse(404, {"name": "RESOURCE_NOT_FOUND",
+                                  "message": "no route in fake"})
 
 
-<div id="JSerror" class="alert alert-warning alert-dismissible show"  role="alert" style="display:none">
-    <button id="JSerror_dismiss" type="button" class="close" aria-label="Close">
-        <span aria-hidden="true">&times;</span>
-    </button>
-    <strong></strong>
-</div>
-<div class="row zip-upload-layout">
-    <div class="col-lg-8 col-md-9">
-        <div class="control-group zip-upload-meta">
-            <label>
-                <b>Fileformats: </b>&nbsp;.zip .rar  .7z .tar
-            </label>
-            <label>
-                <b>Maximum file size:</b>&nbsp;200MB
-            </label>
-        </div>
-<form action="/en/zip/upload_zip" enctype="multipart/form-data" method="post">            <div class="control-group">
-                <input id="userfileInput" type="file" name="userfile" />
-                <small class="form-text text-muted text-muted">Select the file you want to uncompress.</small>
-            </div>
-            <div class="control-group zip-upload-cta-wrap" style="margin-top:10px;">
-                <input id="btnSubmit" type="submit" class="btn btn-primary zip-primary-cta" name="upload" value="Uncompress file" />
-            </div>
-<input name="__RequestVerificationToken" type="hidden" value="CfDJ8HmJtGchOiFHq2iOJDw9BiqSvT-sYF7Ji3mzsfkGkAJT8efGHUSQQrTuHuPQytyF1DCOpZLme-Vun1JfQwpBMPjY-3k3s4ns0sQLOAb6ziNAgwvsbxwqWPDQEOQrtviiw0vAM_5zwmdgxIodllcbUfY" /></form>        <div id="uploadProgressContainer" style="display:none">
-            <p><b>Opening file..</b></p>
-
-            <div id="uploadprogress" class="progress" style="height:30px">
-                <div class="progress-bar" role="progressbar" aria-valuenow="00" aria-valuemin="0" aria-valuemax="100" style="min-width:3em; width: 0%; height:30px;">
-                </div>
-            </div>
-        </div>
-        <br>
-        <br>
-    </div>
-    <div class="col-sm-4">
-        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
-        <!-- zip - right -->
-        <ins class="adsbygoogle"
-             style="display:inline-block;width:336px;height:280px"
-             data-ad-client="ca-pub-3991242167081823"
-             data-ad-slot="4805786595"></ins>
-        <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-</div>
-<hr />
-
-<!-- zip - leaderboard bottom -->
-<ins class="adsbygoogle"
-     style="display:block"
-     data-ad-client="ca-pub-3991242167081823"
-     data-ad-slot="4229193791"
-     data-ad-format="auto"></ins>
-<script>
-    (adsbygoogle = window.adsbygoogle || []).push({});
-</script>
+def token_ok():
+    return FakeResponse(200, {"access_token": "tok-123",
+                              "expires_in": 3600})
 
 
+class TokenTests(unittest.TestCase):
+    def test_token_fetched_and_cached(self):
+        http = FakeHTTP().when("/v1/oauth2/token", token_ok())
+        client = PayPalClient("cid", "secret", http=http)
+        self.assertEqual(client.get_access_token(), "tok-123")
+        self.assertEqual(client.get_access_token(), "tok-123")
+        token_calls = [c for c in http.calls if "oauth2" in c[1]]
+        self.assertEqual(len(token_calls), 1)
 
-        </main>
-        <hr>
-
-        <footer>
-            <p style="display:inline-block;float:left;">&copy; unzip-online 2026</p>
-<p style="float:right;">
-    <a href="/en/privacypolicy">privacy policy</a>
-	|
-    <a href="/en/about">about</a>
-	|
-    <a href="/en/disclaimer">disclaimer</a>
-	|
-	Suggestions or questions? contact us at <a href="mailto:info@unzip-online.com">info@unzip-online.com</a>
-</p>
-        </footer>
-    </div>
+    def test_bad_credentials_raise_paypal_error(self):
+        http = FakeHTTP().when(
+            "/v1/oauth2/token",
+            FakeResponse(401, {"error": "invalid_client",
+                               "error_description": "Client auth failed"}))
+        client = PayPalClient("cid", "wrong", http=http)
+        with self.assertRaises(PayPalError) as ctx:
+            client.get_access_token()
+        self.assertEqual(ctx.exception.status, 401)
 
 
-    <script src="/lib/jquery/dist/jquery.min.js"></script>
-    <script src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+class OrderTests(unittest.TestCase):
+    def _client(self, http):
+        http.when("/v1/oauth2/token", token_ok())
+        return PayPalClient("cid", "secret", http=http)
 
-    
-   
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/zepto/1.2.0/zepto.min.js" integrity="sha256-vrn14y7WH7zgEElyQqm2uCGSQrX/xjYDjniRUQx3NyU=" crossorigin="anonymous"></script>
-    
+    def test_create_and_get_order(self):
+        order = {"id": "ORDER123", "status": "CREATED"}
+        http = FakeHTTP()
+        http.when("/v2/checkout/orders/ORDER123",
+                  FakeResponse(200, order))
+        http.when("/v2/checkout/orders", FakeResponse(201, order))
+        client = self._client(http)
+        created = client.create_order("180.00", "USD",
+                                      description="Logo design")
+        self.assertEqual(created["id"], "ORDER123")
+        fetched = client.get_order("ORDER123")
+        self.assertEqual(fetched["status"], "CREATED")
+        methods = [c[0] for c in http.calls]
+        self.assertEqual(methods.count("POST"), 2)  # token + create
+        self.assertEqual(methods.count("GET"), 1)
 
-    
-    <script>
-        $('#userfileInput').on('change', function (e) {
-            ShowErrorIfSelectedFileTooLarge();
-        });
 
-        function ShowErrorIfSelectedFileTooLarge()
-        {
-            var fileControl = $('#userfileInput')[0];
-            if (!fileControl || !fileControl.files || fileControl.files.length === 0 || !fileControl.files[0]) {
-                return false;
-            }
+class SearchTests(unittest.TestCase):
+    RAW_TX = {
+        "transaction_info": {
+            "transaction_id": "TXN999",
+            "transaction_event_code": "T0006",
+            "transaction_status": "S",
+            "transaction_amount": {"currency_code": "USD", "value": "180.00"},
+            "fee_amount": {"currency_code": "USD", "value": "-5.52"},
+            "transaction_initiation_date": "2026-10-21T09:15:00.000Z",
+            "transaction_subject": "Logo design",
+        },
+        "payer_info": {
+            "email_address": "john@example.com",
+            "payer_info": {"first_name": "John", "last_name": "Smith"},
+        },
+    }
 
-            var selectedFileFileSize = fileControl.files[0].size;
-            if (typeof selectedFileFileSize !== 'number') {
-                return false;
-            }
+    def test_search_normalizes_results(self):
+        http = FakeHTTP()
+        http.when("/v1/oauth2/token", token_ok())
+        http.when("/v1/reporting/transactions",
+                  FakeResponse(200, {"transaction_details": [self.RAW_TX],
+                                     "total_pages": 1, "page": 1}))
+        client = PayPalClient("cid", "secret", http=http)
+        txs = client.search_transactions(
+            datetime(2026, 10, 1, tzinfo=timezone.utc),
+            datetime(2026, 10, 22, tzinfo=timezone.utc))
+        self.assertEqual(len(txs), 1)
+        tx = txs[0]
+        self.assertEqual(tx["transaction_id"], "TXN999")
+        self.assertEqual(tx["amount"], Decimal("180.00"))
+        self.assertEqual(tx["currency"], "USD")
+        self.assertEqual(tx["payer_name"], "John Smith")
+        self.assertEqual(tx["payer_email"], "john@example.com")
+        self.assertEqual(tx["time"].isoformat(),
+                         "2026-10-21T09:15:00+00:00")
 
-            if(selectedFileFileSize  > 200 * 1024 * 1024)
-            {
-                alert('The chosen file is too large, please choose a smaller file.');
-                $('#userfileInput').val(null);
-                return true;
-            }
-            else
-            {
-                return false;
-            }
+    def test_normalize_handles_missing_fields(self):
+        tx = normalize_transaction({"transaction_info": {}})
+        self.assertIsNone(tx["transaction_id"])
+        self.assertIsNone(tx["amount"])
+
+    def test_get_capture_normalizes(self):
+        capture = {
+            "id": "CAP123",
+            "status": "COMPLETED",
+            "amount": {"value": "180.00", "currency_code": "USD"},
+            "create_time": "2026-10-21T09:15:00Z",
+            "seller_receivable_breakdown": {
+                "paypal_fee": {"value": "5.52", "currency_code": "USD"}},
         }
-        $('#JSerror_dismiss').click(function (e) {
-            $('#JSerror').hide();
-        });
+        http = FakeHTTP()
+        http.when("/v1/oauth2/token", token_ok())
+        http.when("/v2/payments/captures/CAP123",
+                  FakeResponse(200, capture))
+        client = PayPalClient("cid", "secret", http=http)
+        tx = client.get_capture("CAP123")
+        self.assertEqual(tx["transaction_id"], "CAP123")
+        self.assertEqual(tx["amount"], Decimal("180.00"))
+        self.assertEqual(tx["fee"], Decimal("5.52"))
+        self.assertIsNone(tx["payer_email"])  # captures expose no payer
 
-        $('#btnSubmit').click(function (e) {
-
-            if (!ShowErrorIfSelectedFileTooLarge())
-            {
-
-                HideError();
-                var supportsAjaxUpload = !!window.FormData && !!window.XMLHttpRequest && !!(new XMLHttpRequest()).upload;
-                if (supportsAjaxUpload) {
-                    var url = '/en/zip/upload_zip';
-
-                    var files = $('#userfileInput').prop("files");
-                    if (!files || files.length === 0 || !files[0]) {
-                        ShowError('Please select a file.');
-                        return false;
-                    }
-
-                    var file = files[0];
-                    var data = new FormData();
-                    data.append("userfile", file);
-
-                    ShowProgressBar();
-
-                    var request = new XMLHttpRequest();
+    def test_search_error_is_paypal_error(self):
+        http = FakeHTTP()
+        http.when("/v1/oauth2/token", token_ok())
+        http.when("/v1/reporting/transactions",
+                  FakeResponse(400, {"name": "INVALID_REQUEST",
+                                     "message": "bad window",
+                                     "debug_id": "dbg1"}))
+        client = PayPalClient("cid", "secret", http=http)
+        with self.assertRaises(PayPalError) as ctx:
+            client.search_transactions(
+                datetime(2026, 10, 1, tzinfo=timezone.utc),
+                datetime(2026, 10, 22, tzinfo=timezone.utc))
+        self.assertEqual(ctx.exception.name, "INVALID_REQUEST")
+        self.assertEqual(ctx.exception.debug_id, "dbg1")
 
 
-                    request.upload.addEventListener("progress", function (evt) {
-                        console.log("progress!");
-                        if (evt.lengthComputable) {
+def scoped_token_endpoint(method, url, kwargs):
+    """Token endpoint that answers by requested scope, like real PayPal.
 
-                            var percentComplete = (evt.loaded / evt.total) * 1000;
-                            percentComplete = Math.round(percentComplete)
-                            percentComplete = percentComplete / 10;
-                            UpdateProgressBar(percentComplete);
-                        }
-                    }, false);
-
-                    request.open('POST', url, true);
-                    //request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-                    request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-                    request.onload = function () {
-                        if (this.status >= 200 && this.status < 400) {
-                            HideProgressBar();
-                            if (this.status == 200) {
-                                var jsonData = JSON.parse(this.responseText);
-
-                                window.location.href = jsonData.redirectUrl;
-                            }
-                        } else {
-                            if (this.status == 400) {
-                                var jsonData = JSON.parse(this.responseText);
-                                ShowError(jsonData.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
-
-                        }
-                    };
-
-                    request.onerror = function () {
-                        ShowError('could not open archive');
-                        HideProgressBar();
-                    };
-
-                    request.send(data);
-
-                    /*
-                    $.ajax({
-                        xhr: function () {
-                            var xhr = new window.XMLHttpRequest();
-
-                            xhr.upload.addEventListener("progress", function (evt) {
-                                console.log("progress!");
-                                if (evt.lengthComputable) {
-
-                                    var percentComplete = (evt.loaded / evt.total) * 1000;
-                                    percentComplete = Math.round(percentComplete)
-                                    percentComplete = percentComplete / 10;
-                                    UpdateProgressBar(percentComplete);
-                                }
-                            }, false);
-                            return xhr;
-                        },
-
-                        type: 'POST',
-                        url: url,
-                        data: data,
-                        processData: false,
-                        contentType: false,
-                        success: function (data, textStatus, jqXHR) {
-                            HideProgressBar();
-                            if (jqXHR.status == 200) {
-                                window.location.href = data.redirectUrl;
-                            }
+    A plain client-credentials request gets the "general" token; only a
+    request carrying the reporting scope gets the search token. This is
+    the verified sandbox behaviour the client is built around.
+    """
+    data = kwargs.get("data") or {}
+    if data.get("scope") == REPORTING_SEARCH_SCOPE:
+        return FakeResponse(200, {"access_token": "tok-search",
+                                  "expires_in": 3600})
+    return FakeResponse(200, {"access_token": "tok-general",
+                              "expires_in": 3600})
 
 
-                        },
-                        error: function (jqXHR, textStatus, errorThrown) {
-                            if (jqXHR.status == 400) {
-                                ShowError(jqXHR.responseJSON.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
-                        }
+class ScopedTokenTests(unittest.TestCase):
+    def _client(self, http):
+        http.when("/v1/oauth2/token", scoped_token_endpoint)
+        http.when("/v1/reporting/transactions",
+                  FakeResponse(200, {"transaction_details": [],
+                                     "total_pages": 1, "page": 1}))
+        return PayPalClient("cid", "secret", http=http)
 
-                    })
-                    */
-                    return false;
-                }
-                else {
-                    return true;
-                }
-            }
-        });
+    def test_search_requests_scoped_token_and_uses_it(self):
+        http = FakeHTTP()
+        client = self._client(http)
+        txs = client.search_transactions(
+            datetime(2026, 10, 1, tzinfo=timezone.utc),
+            datetime(2026, 10, 22, tzinfo=timezone.utc))
+        self.assertEqual(txs, [])
+        token_calls = [c for c in http.calls if "oauth2" in c[1]]
+        scoped = [c for c in token_calls
+                  if (c[2].get("data") or {}).get("scope")
+                  == REPORTING_SEARCH_SCOPE]
+        self.assertTrue(scoped,
+                        "search must request a token with the reporting "
+                        "scope parameter")
+        search_calls = [c for c in http.calls if "reporting" in c[1]]
+        self.assertTrue(search_calls)
+        for _, _, kwargs in search_calls:
+            self.assertEqual(kwargs["headers"]["Authorization"],
+                             "Bearer tok-search")
 
-        function ShowError(error)
-        {
-            $('#JSerror').show();
-            $('#JSerror strong').text(error);
-        }
-        function HideError()
-        {
-            $('#JSerror').hide();
-            $('#JSerror string').text('');
-        }
+    def test_v1_empty_result_is_a_successful_empty_search(self):
+        http = FakeHTTP()
+        client = self._client(http)
+        txs = client.search_transactions(
+            datetime(2026, 10, 15, tzinfo=timezone.utc),
+            datetime(2026, 10, 22, tzinfo=timezone.utc))
+        self.assertEqual(txs, [])
+        urls = [c[1] for c in http.calls if "reporting" in c[1]]
+        self.assertTrue(urls)
+        self.assertTrue(all("/v1/reporting/transactions" in u
+                            for u in urls))
 
-        function ShowProgressBar()
-        {
-            $('#uploadProgressContainer').show();
-            $('#btnSubmit').prop('disabled', true);
-
-        }
-
-        function UpdateProgressBar(percentage)
-        {
-            var progressBar = $("#uploadProgressContainer .progress-bar");
-            progressBar.prop('aria-valuenow', percentage);
-            progressBar.text(percentage + '%');
-            progressBar.css("width", percentage + '%');
-        }
-
-        function HideProgressBar()
-        {
-            $('#uploadProgressContainer').hide();
-            $('#btnSubmit').prop('disabled', false);
-            UpdateProgressBar(0); //reset progressbar
-        }
-
-    </script>
+    def test_general_calls_do_not_use_the_scoped_token(self):
+        http = FakeHTTP()
+        http.when("/v2/checkout/orders",
+                  FakeResponse(201, {"id": "ORDER1", "status": "CREATED"}))
+        client = self._client(http)
+        client.create_order("10.00", "USD")
+        order_calls = [c for c in http.calls if "checkout" in c[1]]
+        self.assertEqual(order_calls[0][2]["headers"]["Authorization"],
+                         "Bearer tok-general")
+        token_calls = [c for c in http.calls if "oauth2" in c[1]]
+        self.assertTrue(all((c[2].get("data") or {}).get("scope") is None
+                            for c in token_calls))
 
 
-    <!-- cookie consent -->
-    <link rel="stylesheet" type="text/css" href="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.css" />
-    <script src="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.js"></script>
-    <script>
-        window.addEventListener("load", function () {
-            window.cookieconsent.initialise({
-                "palette": {
-                    "popup": {
-                        "background": "#edeff5",
-                        "text": "#838391"
-                    },
-                    "button": {
-                        "background": "#4b81e8"
-                    }
-                }
-            })
-        });
-    </script>
-</body>
-</html>
+if __name__ == "__main__":
+    unittest.main()

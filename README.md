@@ -1,371 +1,225 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-36038374-1"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
+# PaidCheck — Nebius edition: "I paid you" claim verification, with Nemotron understanding
 
-        gtag('config', 'UA-36038374-1');
-    </script>
-    <link rel="icon" href="/favicon.ico"><!-- 32×32 -->
-    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+> **Nebius x NVIDIA Global AI Hackathon build.** This edition adds a real
+> runtime integration with **NVIDIA Nemotron models on Nebius Token
+> Factory** (claim understanding + verdict explanation) and a **Tavily**
+> public-context layer — under one strict rule, enforced in code and
+> proven by tests: **the financial verdict comes only from the payment
+> provider's API.** Nemotron may understand and explain; Tavily may add
+> public context; neither may decide, and neither can change a verdict.
+> See `UPDATE_EXPLANATION.md` for the significant-update statement,
+> `CREDIT_BUDGET.md` for the free-credit budget, and
+> `tests/test_nebius_pipeline.py` for the trust-boundary tests
+> (59 tests, all passing).
 
+**Run the demo:** `python3 web_demo.py` (stdlib only, port 7860) or
+`python3 demo_run.py` for three seeded scenarios in the terminal.
+**With keys:** set `NEBIUS_API_KEY` / `TAVILY_API_KEY` (see `.env.example`)
+and run `python3 tools/smoke_test.py` once to confirm the Nemotron model
+ids your account can use. Without keys everything still works in a
+clearly-labelled offline-fixture mode.
 
-            <link href="https://unzip-online.com/en/Zip" rel="alternate" hreflang="en" />
-            <link href="https://unzip-online.com/es/Zip" rel="alternate" hreflang="es" />
-            <link href="https://unzip-online.com/ru/Zip" rel="alternate" hreflang="ru" />
-            <link href="https://unzip-online.com/de/Zip" rel="alternate" hreflang="de" />
-            <link href="https://unzip-online.com/bn/Zip" rel="alternate" hreflang="bn" />
-            <link href="https://unzip-online.com/nl/Zip" rel="alternate" hreflang="nl" />
-            <link href="https://unzip-online.com/sv/Zip" rel="alternate" hreflang="sv" />
-            <link href="https://unzip-online.com/fr/Zip" rel="alternate" hreflang="fr" />
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <title>Uncompress file - unzip-online</title>
-    <link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="/css/site.css" />
-</head>
-<body>
-    <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-dark bg-dark border-bottom box-shadow mb-3">
-            <div class="container">
-                <a class="navbar-brand" href="/en"><img src="/logo.png" alt="source" style="width:30px; height:auto; margin-right:10px;" /> unzip-online.com</a>
-                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                        aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex" id="navbarSupportedContent">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/zip"> Unzip</a>
-                        </li>
-                        
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/about">About</a>
-                        </li>
-                    </ul>
-                        <ul class="navbar-nav ml-auto">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="https://unrar-online.com">Rar archive extractor </a>
-                                </li>
-                            <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle" href="#" id="dropdownLanguage" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Language</a>
-                                <div class="dropdown-menu" aria-labelledby="dropdownLanguage">
+**Where Nemotron is used:** `nemotron_client.py` (suggestions for parser
+gaps + plain-language verdict explanations with anomaly flags, via Token
+Factory's OpenAI-compatible API). **Where Tavily is used:**
+`tavily_context.py` (public business context, basic search, privacy-guarded).
+**Where the verdict is decided:** `matcher.py` — unchanged from the
+original build, fed only by payment-API evidence (`pipeline.py` composes
+the layers around it).
 
+---
 
-<a class="dropdown-item" href="/en/Zip" hreflang="en" rel="alternative">English(en)</a><a class="dropdown-item" href="/es/Zip" hreflang="es" rel="alternative">Spanish(es)</a><a class="dropdown-item" href="/ru/Zip" hreflang="ru" rel="alternative">Russian(ru)</a><a class="dropdown-item" href="/de/Zip" hreflang="de" rel="alternative">German(de)</a><a class="dropdown-item" href="/bn/Zip" hreflang="bn" rel="alternative">Bengali(bn)</a><a class="dropdown-item" href="/nl/Zip" hreflang="nl" rel="alternative">Dutch(nl)</a><a class="dropdown-item" href="/sv/Zip" hreflang="sv" rel="alternative">Swedish(sv)</a><a class="dropdown-item" href="/fr/Zip" hreflang="fr" rel="alternative">French(fr)</a>                                </div>
-                            </li>
-                        </ul>
-                </div>
-            </div>
-        </nav>
-    </header>
-    <div class="container">
-        <main role="main" class="pb-3">
-            
-<div class="page-header zip-hero">
-    <h1 class="zip-hero-title">Uncompress file</h1>
-</div>
+# PaidCheck — "I paid you" claim verification agent (original build)
 
+**PaidCheck checks a natural-language payment claim against real PayPal
+transactions and issues an evidence-backed verdict memo.**
 
+Sellers and freelancers constantly receive "I paid you" claims — pasted
+emails, chat messages, screenshots — and verifying them by hand means
+digging through a PayPal dashboard, squinting at amounts and dates. PaidCheck
+automates the check: paste the claim, and the agent parses it, searches the
+seller's PayPal account, and answers with one of five verdicts:
 
+| Verdict | Meaning |
+|---|---|
+| **MATCHED** | A PayPal transaction agrees with the claim (amount, currency, payer). |
+| **PARTIAL** | A close transaction exists but a field disagrees — amount, currency or payer. The memo names the differences and flags anomalies (e.g. a possible digit transposition: claimed 108, actual 180). |
+| **NOT FOUND** | Nothing in the searched window resembles the claim. The claim is *not verified* — a screenshot is not proof of payment. |
+| **DUPLICATE** | The transaction matches, but a different claim was already verified against the same payment. One payment cannot settle two claims. |
+| **UNCONFIRMED** | The PayPal API call itself failed (auth error, HTTP 4xx/5xx, network). No search could be completed, so the claim is neither verified nor disproven — the memo records the exact API error. Deliberately distinct from NOT FOUND, which means the search *succeeded* and found nothing. |
 
-<div id="JSerror" class="alert alert-warning alert-dismissible show"  role="alert" style="display:none">
-    <button id="JSerror_dismiss" type="button" class="close" aria-label="Close">
-        <span aria-hidden="true">&times;</span>
-    </button>
-    <strong></strong>
-</div>
-<div class="row zip-upload-layout">
-    <div class="col-lg-8 col-md-9">
-        <div class="control-group zip-upload-meta">
-            <label>
-                <b>Fileformats: </b>&nbsp;.zip .rar  .7z .tar
-            </label>
-            <label>
-                <b>Maximum file size:</b>&nbsp;200MB
-            </label>
-        </div>
-<form action="/en/zip/upload_zip" enctype="multipart/form-data" method="post">            <div class="control-group">
-                <input id="userfileInput" type="file" name="userfile" />
-                <small class="form-text text-muted text-muted">Select the file you want to uncompress.</small>
-            </div>
-            <div class="control-group zip-upload-cta-wrap" style="margin-top:10px;">
-                <input id="btnSubmit" type="submit" class="btn btn-primary zip-primary-cta" name="upload" value="Uncompress file" />
-            </div>
-<input name="__RequestVerificationToken" type="hidden" value="CfDJ8HmJtGchOiFHq2iOJDw9BioMxbO0ulfvcVL9IKbYGE3jfiP7It80kgz2ZsMogv4KVp82mZ9KC5COXyD-3lae_sxHCOUJZ51Yp9p-ajso2X2pKYb4IYdp2yrfKfVZcUDXJsef2AHivGZxNm_AbqMq3gg" /></form>        <div id="uploadProgressContainer" style="display:none">
-            <p><b>Opening file..</b></p>
+The output is a shareable **verification memo** (rendered HTML + Markdown
+export) quoting the exact PayPal transaction fields as evidence.
 
-            <div id="uploadprogress" class="progress" style="height:30px">
-                <div class="progress-bar" role="progressbar" aria-valuenow="00" aria-valuemin="0" aria-valuemax="100" style="min-width:3em; width: 0%; height:30px;">
-                </div>
-            </div>
-        </div>
-        <br>
-        <br>
-    </div>
-    <div class="col-sm-4">
-        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
-        <!-- zip - right -->
-        <ins class="adsbygoogle"
-             style="display:inline-block;width:336px;height:280px"
-             data-ad-client="ca-pub-3991242167081823"
-             data-ad-slot="4805786595"></ins>
-        <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-</div>
-<hr />
+> Built for the **PayPal AI Hackathon** (Devpost). Everything runs against
+> the **PayPal sandbox** (`api-m.sandbox.paypal.com`) with test money; the
+> verification logic is identical to production.
 
-<!-- zip - leaderboard bottom -->
-<ins class="adsbygoogle"
-     style="display:block"
-     data-ad-client="ca-pub-3991242167081823"
-     data-ad-slot="4229193791"
-     data-ad-format="auto"></ins>
-<script>
-    (adsbygoogle = window.adsbygoogle || []).push({});
-</script>
+## How it works
 
+```
+claim text ──► claim_parser ──► PayPalClient.search_transactions
+ (pasted)      (deterministic      (Transaction Search, windowed)
+                rules/regex)                 │
+                                             ▼
+ memo (HTML + Markdown) ◄── matcher.evaluate ◄── normalized transactions
+        ▲                        │
+        └──── claims ledger (SQLite) ── DUPLICATE detection
+```
 
+* `claim_parser.py` — extracts amount, currency, payer name/email, claimed
+  date and search window, item description, and an explicit transaction
+  reference if the claim includes one. Handles US (`1,200.50`) and European
+  (`1.200,50`) number formats, currency symbols/words/ISO codes, absolute
+  and relative dates ("yesterday", "3 days ago").
+* `paypal_client.py` — OAuth client-credentials with token caching
+  (two caches: the general token, and a separately scoped token for
+  Transaction Search — see the scope note below), Orders v2
+  (create/get/capture), Transaction Search on the **v1** endpoint with
+  automatic 31-day window chunking and pagination, Payouts (seeding).
+  PayPal errors surface verbatim (status, error name, debug id) —
+  nothing is swallowed.
+* `matcher.py` — the verdict engine, anomaly flags, the local SQLite
+  claims ledger (duplicate detection), and the memo renderers.
+* `app.py` — local demo UI + CLI, built on the Python standard library
+  (see the module docstring for why not Flask).
+* `seed_demo.py` — seeds the sandbox (orders + a payout) and logs, in
+  `SEEDING.md`, exactly which server-side routes worked and which step
+  needs a browser-approved checkout.
 
-        </main>
-        <hr>
+## Setup
 
-        <footer>
-            <p style="display:inline-block;float:left;">&copy; unzip-online 2026</p>
-<p style="float:right;">
-    <a href="/en/privacypolicy">privacy policy</a>
-	|
-    <a href="/en/about">about</a>
-	|
-    <a href="/en/disclaimer">disclaimer</a>
-	|
-	Suggestions or questions? contact us at <a href="mailto:info@unzip-online.com">info@unzip-online.com</a>
-</p>
-        </footer>
-    </div>
+Requirements: Python 3.10+.
 
+```bash
+pip install -r requirements.txt
+```
 
-    <script src="/lib/jquery/dist/jquery.min.js"></script>
-    <script src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+Create a **sandbox** app to get credentials:
 
-    
-   
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/zepto/1.2.0/zepto.min.js" integrity="sha256-vrn14y7WH7zgEElyQqm2uCGSQrX/xjYDjniRUQx3NyU=" crossorigin="anonymous"></script>
-    
+1. Sign in at <https://developer.paypal.com> (a free PayPal account works).
+2. Dashboard → **My Apps & Credentials** → **Sandbox** tab → **Create App**.
+3. Copy the **Client ID** and **Secret**.
+4. Under **Sandbox test accounts**, note the generated **business** and
+   **personal** test account emails (you will use the business account as
+   "the seller" whose transactions PaidCheck searches).
 
-    
-    <script>
-        $('#userfileInput').on('change', function (e) {
-            ShowErrorIfSelectedFileTooLarge();
-        });
+Configure:
 
-        function ShowErrorIfSelectedFileTooLarge()
-        {
-            var fileControl = $('#userfileInput')[0];
-            if (!fileControl || !fileControl.files || fileControl.files.length === 0 || !fileControl.files[0]) {
-                return false;
-            }
+```bash
+cp .env.example .env   # then paste your sandbox Client ID / Secret
+export PAYPAL_CLIENT_ID=<your sandbox client id>
+export PAYPAL_CLIENT_SECRET=<your sandbox secret>
+```
 
-            var selectedFileFileSize = fileControl.files[0].size;
-            if (typeof selectedFileFileSize !== 'number') {
-                return false;
-            }
+## Run it
 
-            if(selectedFileFileSize  > 200 * 1024 * 1024)
-            {
-                alert('The chosen file is too large, please choose a smaller file.');
-                $('#userfileInput').val(null);
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-        $('#JSerror_dismiss').click(function (e) {
-            $('#JSerror').hide();
-        });
+Seed the sandbox first (creates demo orders, attempts a seed payout, and
+lists what Transaction Search can see):
 
-        $('#btnSubmit').click(function (e) {
+```bash
+python3 seed_demo.py
+# read SEEDING.md for exactly what happened in your sandbox
+```
 
-            if (!ShowErrorIfSelectedFileTooLarge())
-            {
+Web UI:
 
-                HideError();
-                var supportsAjaxUpload = !!window.FormData && !!window.XMLHttpRequest && !!(new XMLHttpRequest()).upload;
-                if (supportsAjaxUpload) {
-                    var url = '/en/zip/upload_zip';
+```bash
+python3 app.py            # http://127.0.0.1:8000
+```
 
-                    var files = $('#userfileInput').prop("files");
-                    if (!files || files.length === 0 || !files[0]) {
-                        ShowError('Please select a file.');
-                        return false;
-                    }
+CLI (prints the Markdown memo):
 
-                    var file = files[0];
-                    var data = new FormData();
-                    data.append("userfile", file);
+```bash
+python3 app.py --cli "Paid $180 for the logo design yesterday via PayPal. Transaction from John Smith."
+```
 
-                    ShowProgressBar();
+### A note on the Transaction Search scope (important, verified live)
 
-                    var request = new XMLHttpRequest();
+Transaction Search requires the OAuth scope
+`https://uri.paypal.com/services/reporting/search/read`. Two things must
+both be true to get it, and the second one is the trap:
 
+1. The app owner enables the **Transaction Search** feature on the app in
+   the Developer Dashboard (My Apps & Credentials → your app → features).
+2. **The token request must explicitly ask for the scope.** PayPal's
+   token endpoint answers a plain `client_credentials` request with a
+   *cached general token* (26 scopes, reporting not among them) — even
+   after the feature is enabled. This looks exactly like "the dashboard
+   change hasn't propagated", but it is not propagation: requesting a
+   token with `scope=https://uri.paypal.com/services/reporting/search/read`
+   returns a *different, fresh* token that carries the reporting scope.
+   Verified directly against the sandbox on 2026-10-22 (the two tokens
+   have different fingerprints; the scoped one comes back with a full
+   32400s expiry). `paypal_client.py` therefore keeps the two tokens in
+   separate caches and uses the scoped one only for Transaction Search.
 
-                    request.upload.addEventListener("progress", function (evt) {
-                        console.log("progress!");
-                        if (evt.lengthComputable) {
+PaidCheck searches on the **v1** endpoint
+(`GET /v1/reporting/transactions`): HTTP 200 with the scoped token. The
+**v2** endpoint returns HTTP 404 with an empty body in this sandbox even
+with a correctly scoped token, so it is not used.
 
-                            var percentComplete = (evt.loaded / evt.total) * 1000;
-                            percentComplete = Math.round(percentComplete)
-                            percentComplete = percentComplete / 10;
-                            UpdateProgressBar(percentComplete);
-                        }
-                    }, false);
+PaidCheck also has a secondary evidence route: when a claim quotes a
+**capture id**, `GET /v2/payments/captures/{id}` (Payments v2, no
+reporting scope needed) returns the amount, currency and status, and the
+matcher scores the claim against it (captures do not expose payer
+identity, so the payer field is not scored on that route).
 
-                    request.open('POST', url, true);
-                    //request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-                    request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-                    request.onload = function () {
-                        if (this.status >= 200 && this.status < 400) {
-                            HideProgressBar();
-                            if (this.status == 200) {
-                                var jsonData = JSON.parse(this.responseText);
+### A note on sandbox evidence
 
-                                window.location.href = jsonData.redirectUrl;
-                            }
-                        } else {
-                            if (this.status == 400) {
-                                var jsonData = JSON.parse(this.responseText);
-                                ShowError(jsonData.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
+**A created order is not a completed payment.** The seeded demo orders
+sit in status `CREATED` with no payments attached: an Orders v2 order
+only becomes a payment after a payer approves it in a checkout flow and
+the order is captured. That approval is a browser step a server script
+cannot perform, so `seed_demo.py` logs PayPal's real
+`ORDER_NOT_APPROVED` answer instead of pretending. Demonstrating a
+*completed* payment therefore requires one browser-approved checkout +
+capture (planned for the demo recording). The sandbox Payout, by
+contrast, moves test money immediately and produces a genuine ledger
+movement on the sender account. Transaction Search indexing can lag a
+few minutes behind new activity.
 
-                        }
-                    };
+## Tests
 
-                    request.onerror = function () {
-                        ShowError('could not open archive');
-                        HideProgressBar();
-                    };
+```bash
+python3 -m unittest discover -s tests
+```
 
-                    request.send(data);
+50 unit tests, no network: parser coverage (amounts, currencies, dates,
+payer, item, transaction refs), all five verdicts, anomaly flags
+(transposition, currency/payer mismatch, stale window, future date),
+duplicate detection against a temporary ledger, memo rendering, and the
+PayPal client against a fake HTTP layer (token caching, error mapping,
+normalization — including the scoped-token request used for search and
+v1 empty-result handling). A dedicated test group pins the failure
+semantics: a simulated API 403/500 during verification yields
+UNCONFIRMED, while a successful-but-empty search yields NOT FOUND.
+Mocks live **only** in tests — the app path always calls the real
+sandbox API.
 
-                    /*
-                    $.ajax({
-                        xhr: function () {
-                            var xhr = new window.XMLHttpRequest();
+## AI tools disclosure
 
-                            xhr.upload.addEventListener("progress", function (evt) {
-                                console.log("progress!");
-                                if (evt.lengthComputable) {
+PaidCheck's claim understanding is **deterministic by design**: a
+rules/regex parser (`claim_parser.py`) plus a rule-based verdict engine
+(`matcher.py`). This is deliberate — the demo must run identically for any
+judge, with **no paid API key**. An optional LLM gap-filler exists behind
+the `PAIDCHECK_LLM_PARSER=1` environment flag (OpenAI API; it only fills
+fields the rules could not find and falls back silently on any error); it
+is **off by default** and not required for any documented flow.
 
-                                    var percentComplete = (evt.loaded / evt.total) * 1000;
-                                    percentComplete = Math.round(percentComplete)
-                                    percentComplete = percentComplete / 10;
-                                    UpdateProgressBar(percentComplete);
-                                }
-                            }, false);
-                            return xhr;
-                        },
+This project was developed with the assistance of an AI coding agent
+(Muse, by Meta) acting as the team's builder; the human team member
+directed the product decisions and performed all account sign-ins.
+Transaction evidence shown in the demo comes from the PayPal sandbox API,
+not from generated content.
 
-                        type: 'POST',
-                        url: url,
-                        data: data,
-                        processData: false,
-                        contentType: false,
-                        success: function (data, textStatus, jqXHR) {
-                            HideProgressBar();
-                            if (jqXHR.status == 200) {
-                                window.location.href = data.redirectUrl;
-                            }
+## Roadmap
 
+* PayPal **Disputes API** integration (auto-attach a PaidCheck memo as
+  dispute evidence).
+* Invoicing API cross-check (claim vs. issued invoice).
+* Hosted multi-seller deployment with per-seller OAuth (production).
 
-                        },
-                        error: function (jqXHR, textStatus, errorThrown) {
-                            if (jqXHR.status == 400) {
-                                ShowError(jqXHR.responseJSON.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
-                        }
+## License
 
-                    })
-                    */
-                    return false;
-                }
-                else {
-                    return true;
-                }
-            }
-        });
-
-        function ShowError(error)
-        {
-            $('#JSerror').show();
-            $('#JSerror strong').text(error);
-        }
-        function HideError()
-        {
-            $('#JSerror').hide();
-            $('#JSerror string').text('');
-        }
-
-        function ShowProgressBar()
-        {
-            $('#uploadProgressContainer').show();
-            $('#btnSubmit').prop('disabled', true);
-
-        }
-
-        function UpdateProgressBar(percentage)
-        {
-            var progressBar = $("#uploadProgressContainer .progress-bar");
-            progressBar.prop('aria-valuenow', percentage);
-            progressBar.text(percentage + '%');
-            progressBar.css("width", percentage + '%');
-        }
-
-        function HideProgressBar()
-        {
-            $('#uploadProgressContainer').hide();
-            $('#btnSubmit').prop('disabled', false);
-            UpdateProgressBar(0); //reset progressbar
-        }
-
-    </script>
-
-
-    <!-- cookie consent -->
-    <link rel="stylesheet" type="text/css" href="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.css" />
-    <script src="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.js"></script>
-    <script>
-        window.addEventListener("load", function () {
-            window.cookieconsent.initialise({
-                "palette": {
-                    "popup": {
-                        "background": "#edeff5",
-                        "text": "#838391"
-                    },
-                    "button": {
-                        "background": "#4b81e8"
-                    }
-                }
-            })
-        });
-    </script>
-</body>
-</html>
+MIT — see [LICENSE](LICENSE).

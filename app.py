@@ -1,371 +1,166 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-36038374-1"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
+"""PaidCheck demo app — local web UI and CLI.
 
-        gtag('config', 'UA-36038374-1');
-    </script>
-    <link rel="icon" href="/favicon.ico"><!-- 32×32 -->
-    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+Why the standard-library ``http.server`` instead of Flask: the demo is a
+single intake form plus a memo page. Using only the stdlib (plus
+``requests``, already required by the PayPal client) means judges run it
+with zero framework install friction, and there is nothing else to audit.
+Flask would add a dependency without adding anything this demo needs.
 
+Usage:
+    # web UI (http://127.0.0.1:8000)
+    PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... python3 app.py
 
-            <link href="https://unzip-online.com/en/Zip" rel="alternate" hreflang="en" />
-            <link href="https://unzip-online.com/es/Zip" rel="alternate" hreflang="es" />
-            <link href="https://unzip-online.com/ru/Zip" rel="alternate" hreflang="ru" />
-            <link href="https://unzip-online.com/de/Zip" rel="alternate" hreflang="de" />
-            <link href="https://unzip-online.com/bn/Zip" rel="alternate" hreflang="bn" />
-            <link href="https://unzip-online.com/nl/Zip" rel="alternate" hreflang="nl" />
-            <link href="https://unzip-online.com/sv/Zip" rel="alternate" hreflang="sv" />
-            <link href="https://unzip-online.com/fr/Zip" rel="alternate" hreflang="fr" />
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <title>Uncompress file - unzip-online</title>
-    <link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="/css/site.css" />
-</head>
+    # one-shot CLI check (prints the Markdown memo)
+    PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... \
+        python3 app.py --cli "Paid $180 for the logo, from John Smith"
+"""
+
+from __future__ import annotations
+
+import argparse
+import html
+import os
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
+
+import claim_parser
+import matcher
+from paypal_client import PayPalError, client_from_env
+
+FORM_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>PaidCheck — verify an "I paid you" claim</title>
+<style>body{font-family:system-ui,sans-serif;max-width:760px;margin:2rem auto;
+padding:0 1rem}textarea{width:100%;box-sizing:border-box}
+button{padding:.5rem 1.2rem;font-size:1rem}.note{color:#555}</style></head>
 <body>
-    <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-dark bg-dark border-bottom box-shadow mb-3">
-            <div class="container">
-                <a class="navbar-brand" href="/en"><img src="/logo.png" alt="source" style="width:30px; height:auto; margin-right:10px;" /> unzip-online.com</a>
-                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                        aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex" id="navbarSupportedContent">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/zip"> Unzip</a>
-                        </li>
-                        
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/about">About</a>
-                        </li>
-                    </ul>
-                        <ul class="navbar-nav ml-auto">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="https://unrar-online.com">Rar archive extractor </a>
-                                </li>
-                            <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle" href="#" id="dropdownLanguage" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Language</a>
-                                <div class="dropdown-menu" aria-labelledby="dropdownLanguage">
+<h1>PaidCheck</h1>
+<p>Paste the "I paid you" claim you received. PaidCheck checks it against
+your real PayPal <b>sandbox</b> transactions and returns an evidence-backed
+verdict memo.</p>
+<form method="post" action="/check">
+<textarea name="claim" rows="6" placeholder="e.g. Hi, I paid $180 for the logo design yesterday via PayPal. Transaction from John Smith."></textarea>
+<p><button type="submit">Verify claim</button></p>
+</form>
+<p class="note">Runs against api-m.sandbox.paypal.com (test money). Verdicts:
+MATCHED / PARTIAL / NOT FOUND / DUPLICATE / UNCONFIRMED (the API call
+failed, so no check could be completed).</p>
+</body></html>"""
 
 
-<a class="dropdown-item" href="/en/Zip" hreflang="en" rel="alternative">English(en)</a><a class="dropdown-item" href="/es/Zip" hreflang="es" rel="alternative">Spanish(es)</a><a class="dropdown-item" href="/ru/Zip" hreflang="ru" rel="alternative">Russian(ru)</a><a class="dropdown-item" href="/de/Zip" hreflang="de" rel="alternative">German(de)</a><a class="dropdown-item" href="/bn/Zip" hreflang="bn" rel="alternative">Bengali(bn)</a><a class="dropdown-item" href="/nl/Zip" hreflang="nl" rel="alternative">Dutch(nl)</a><a class="dropdown-item" href="/sv/Zip" hreflang="sv" rel="alternative">Swedish(sv)</a><a class="dropdown-item" href="/fr/Zip" hreflang="fr" rel="alternative">French(fr)</a>                                </div>
-                            </li>
-                        </ul>
-                </div>
-            </div>
-        </nav>
-    </header>
-    <div class="container">
-        <main role="main" class="pb-3">
-            
-<div class="page-header zip-hero">
-    <h1 class="zip-hero-title">Uncompress file</h1>
-</div>
+def run_check(claim_text: str) -> matcher.Verdict:
+    """End-to-end: parse -> PayPal search -> verdict (the live path).
+
+    A PayPal API failure during the search is NOT an exception to the
+    caller and NOT a NOT FOUND: it returns an UNCONFIRMED verdict whose
+    memo records the API error, so the user can tell "we could not check"
+    apart from "we checked and found nothing".
+    """
+    claim = claim_parser.parse_claim(claim_text)
+    client = client_from_env()
+    start, end = claim.window()
+    db_path = os.environ.get("PAIDCHECK_DB", matcher.DEFAULT_DB_PATH)
+    try:
+        transactions = client.search_transactions(start, end)
+    except PayPalError as exc:
+        return matcher.unconfirmed_verdict(claim, exc, db_path=db_path)
+    if claim.transaction_ref:
+        # Make sure a referenced transaction outside the window is seen too.
+        known = {tx.get("transaction_id") for tx in transactions}
+        if claim.transaction_ref not in known:
+            try:
+                transactions.append(
+                    client.get_transaction(claim.transaction_ref))
+            except PayPalError:
+                # Secondary route: if the reference is a capture id, the
+                # Payments v2 capture lookup needs no reporting scope.
+                try:
+                    transactions.append(
+                        client.get_capture(claim.transaction_ref))
+                except PayPalError:
+                    pass  # the window result stands; verdict will say so
+    return matcher.evaluate(claim, transactions, db_path=db_path)
 
 
+class Handler(BaseHTTPRequestHandler):
+    server_version = "PaidCheck/0.1"
+
+    def log_message(self, *args):  # keep the demo console readable
+        pass
+
+    def _send(self, code: int, body: str, content_type: str):
+        data = body.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            self._send(200, FORM_PAGE, "text/html; charset=utf-8")
+        elif self.path == "/health":
+            import json
+            self._send(200, json.dumps({"status": "ok",
+                                        "environment": os.environ.get(
+                                            "PAYPAL_ENV", "sandbox")}),
+                       "application/json")
+        else:
+            self._send(404, "Not found", "text/plain")
+
+    def do_POST(self):
+        if self.path != "/check":
+            self._send(404, "Not found", "text/plain")
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        form = parse_qs(self.rfile.read(length).decode("utf-8"))
+        claim_text = (form.get("claim") or [""])[0].strip()
+        if not claim_text:
+            self._send(400, "Paste a claim first.", "text/plain")
+            return
+        try:
+            verdict = run_check(claim_text)
+        except PayPalError as exc:
+            self._send(502, "PayPal API error: " + html.escape(str(exc)),
+                       "text/html; charset=utf-8")
+            return
+        except ValueError as exc:  # missing credentials, etc.
+            self._send(500, "Configuration error: " + html.escape(str(exc))
+                       + "<br>Set PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET "
+                         "(sandbox) — see README.",
+                       "text/html; charset=utf-8")
+            return
+        self._send(200, matcher.memo_html(verdict),
+                   "text/html; charset=utf-8")
 
 
-<div id="JSerror" class="alert alert-warning alert-dismissible show"  role="alert" style="display:none">
-    <button id="JSerror_dismiss" type="button" class="close" aria-label="Close">
-        <span aria-hidden="true">&times;</span>
-    </button>
-    <strong></strong>
-</div>
-<div class="row zip-upload-layout">
-    <div class="col-lg-8 col-md-9">
-        <div class="control-group zip-upload-meta">
-            <label>
-                <b>Fileformats: </b>&nbsp;.zip .rar  .7z .tar
-            </label>
-            <label>
-                <b>Maximum file size:</b>&nbsp;200MB
-            </label>
-        </div>
-<form action="/en/zip/upload_zip" enctype="multipart/form-data" method="post">            <div class="control-group">
-                <input id="userfileInput" type="file" name="userfile" />
-                <small class="form-text text-muted text-muted">Select the file you want to uncompress.</small>
-            </div>
-            <div class="control-group zip-upload-cta-wrap" style="margin-top:10px;">
-                <input id="btnSubmit" type="submit" class="btn btn-primary zip-primary-cta" name="upload" value="Uncompress file" />
-            </div>
-<input name="__RequestVerificationToken" type="hidden" value="CfDJ8HmJtGchOiFHq2iOJDw9BipPA-XXRMX1JPp-3-i5N62lzcMUBfmZuOePWcVgoSnj7e7W5Q9vd2nRVKbE1zUah2OSoz4vSd_m-JekBPtwV41a5d-0pRftmI7uBZiVeCL5PX5u-_kbfE2jlg6PQfUkBZk" /></form>        <div id="uploadProgressContainer" style="display:none">
-            <p><b>Opening file..</b></p>
-
-            <div id="uploadprogress" class="progress" style="height:30px">
-                <div class="progress-bar" role="progressbar" aria-valuenow="00" aria-valuemin="0" aria-valuemax="100" style="min-width:3em; width: 0%; height:30px;">
-                </div>
-            </div>
-        </div>
-        <br>
-        <br>
-    </div>
-    <div class="col-sm-4">
-        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
-        <!-- zip - right -->
-        <ins class="adsbygoogle"
-             style="display:inline-block;width:336px;height:280px"
-             data-ad-client="ca-pub-3991242167081823"
-             data-ad-slot="4805786595"></ins>
-        <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-</div>
-<hr />
-
-<!-- zip - leaderboard bottom -->
-<ins class="adsbygoogle"
-     style="display:block"
-     data-ad-client="ca-pub-3991242167081823"
-     data-ad-slot="4229193791"
-     data-ad-format="auto"></ins>
-<script>
-    (adsbygoogle = window.adsbygoogle || []).push({});
-</script>
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="PaidCheck demo")
+    parser.add_argument("--cli", metavar="CLAIM",
+                        help="check one claim text and print the memo")
+    args = parser.parse_args(argv)
+    if args.cli:
+        try:
+            verdict = run_check(args.cli)
+        except ValueError as exc:  # missing credentials = config problem
+            print(f"PaidCheck configuration error: {exc}", file=sys.stderr)
+            return 1
+        # An UNCONFIRMED verdict is a completed check with an honest
+        # outcome (the memo says exactly what the API answered), not a
+        # crash: print it and exit 0.
+        print(matcher.memo_markdown(verdict), end="")
+        return 0
+    port = int(os.environ.get("PAIDCHECK_PORT", "8000"))
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    print(f"PaidCheck UI on http://127.0.0.1:{port} "
+          f"(environment: {os.environ.get('PAYPAL_ENV', 'sandbox')})")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
 
 
-
-        </main>
-        <hr>
-
-        <footer>
-            <p style="display:inline-block;float:left;">&copy; unzip-online 2026</p>
-<p style="float:right;">
-    <a href="/en/privacypolicy">privacy policy</a>
-	|
-    <a href="/en/about">about</a>
-	|
-    <a href="/en/disclaimer">disclaimer</a>
-	|
-	Suggestions or questions? contact us at <a href="mailto:info@unzip-online.com">info@unzip-online.com</a>
-</p>
-        </footer>
-    </div>
-
-
-    <script src="/lib/jquery/dist/jquery.min.js"></script>
-    <script src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-
-    
-   
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/zepto/1.2.0/zepto.min.js" integrity="sha256-vrn14y7WH7zgEElyQqm2uCGSQrX/xjYDjniRUQx3NyU=" crossorigin="anonymous"></script>
-    
-
-    
-    <script>
-        $('#userfileInput').on('change', function (e) {
-            ShowErrorIfSelectedFileTooLarge();
-        });
-
-        function ShowErrorIfSelectedFileTooLarge()
-        {
-            var fileControl = $('#userfileInput')[0];
-            if (!fileControl || !fileControl.files || fileControl.files.length === 0 || !fileControl.files[0]) {
-                return false;
-            }
-
-            var selectedFileFileSize = fileControl.files[0].size;
-            if (typeof selectedFileFileSize !== 'number') {
-                return false;
-            }
-
-            if(selectedFileFileSize  > 200 * 1024 * 1024)
-            {
-                alert('The chosen file is too large, please choose a smaller file.');
-                $('#userfileInput').val(null);
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-        $('#JSerror_dismiss').click(function (e) {
-            $('#JSerror').hide();
-        });
-
-        $('#btnSubmit').click(function (e) {
-
-            if (!ShowErrorIfSelectedFileTooLarge())
-            {
-
-                HideError();
-                var supportsAjaxUpload = !!window.FormData && !!window.XMLHttpRequest && !!(new XMLHttpRequest()).upload;
-                if (supportsAjaxUpload) {
-                    var url = '/en/zip/upload_zip';
-
-                    var files = $('#userfileInput').prop("files");
-                    if (!files || files.length === 0 || !files[0]) {
-                        ShowError('Please select a file.');
-                        return false;
-                    }
-
-                    var file = files[0];
-                    var data = new FormData();
-                    data.append("userfile", file);
-
-                    ShowProgressBar();
-
-                    var request = new XMLHttpRequest();
-
-
-                    request.upload.addEventListener("progress", function (evt) {
-                        console.log("progress!");
-                        if (evt.lengthComputable) {
-
-                            var percentComplete = (evt.loaded / evt.total) * 1000;
-                            percentComplete = Math.round(percentComplete)
-                            percentComplete = percentComplete / 10;
-                            UpdateProgressBar(percentComplete);
-                        }
-                    }, false);
-
-                    request.open('POST', url, true);
-                    //request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-                    request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-                    request.onload = function () {
-                        if (this.status >= 200 && this.status < 400) {
-                            HideProgressBar();
-                            if (this.status == 200) {
-                                var jsonData = JSON.parse(this.responseText);
-
-                                window.location.href = jsonData.redirectUrl;
-                            }
-                        } else {
-                            if (this.status == 400) {
-                                var jsonData = JSON.parse(this.responseText);
-                                ShowError(jsonData.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
-
-                        }
-                    };
-
-                    request.onerror = function () {
-                        ShowError('could not open archive');
-                        HideProgressBar();
-                    };
-
-                    request.send(data);
-
-                    /*
-                    $.ajax({
-                        xhr: function () {
-                            var xhr = new window.XMLHttpRequest();
-
-                            xhr.upload.addEventListener("progress", function (evt) {
-                                console.log("progress!");
-                                if (evt.lengthComputable) {
-
-                                    var percentComplete = (evt.loaded / evt.total) * 1000;
-                                    percentComplete = Math.round(percentComplete)
-                                    percentComplete = percentComplete / 10;
-                                    UpdateProgressBar(percentComplete);
-                                }
-                            }, false);
-                            return xhr;
-                        },
-
-                        type: 'POST',
-                        url: url,
-                        data: data,
-                        processData: false,
-                        contentType: false,
-                        success: function (data, textStatus, jqXHR) {
-                            HideProgressBar();
-                            if (jqXHR.status == 200) {
-                                window.location.href = data.redirectUrl;
-                            }
-
-
-                        },
-                        error: function (jqXHR, textStatus, errorThrown) {
-                            if (jqXHR.status == 400) {
-                                ShowError(jqXHR.responseJSON.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
-                        }
-
-                    })
-                    */
-                    return false;
-                }
-                else {
-                    return true;
-                }
-            }
-        });
-
-        function ShowError(error)
-        {
-            $('#JSerror').show();
-            $('#JSerror strong').text(error);
-        }
-        function HideError()
-        {
-            $('#JSerror').hide();
-            $('#JSerror string').text('');
-        }
-
-        function ShowProgressBar()
-        {
-            $('#uploadProgressContainer').show();
-            $('#btnSubmit').prop('disabled', true);
-
-        }
-
-        function UpdateProgressBar(percentage)
-        {
-            var progressBar = $("#uploadProgressContainer .progress-bar");
-            progressBar.prop('aria-valuenow', percentage);
-            progressBar.text(percentage + '%');
-            progressBar.css("width", percentage + '%');
-        }
-
-        function HideProgressBar()
-        {
-            $('#uploadProgressContainer').hide();
-            $('#btnSubmit').prop('disabled', false);
-            UpdateProgressBar(0); //reset progressbar
-        }
-
-    </script>
-
-
-    <!-- cookie consent -->
-    <link rel="stylesheet" type="text/css" href="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.css" />
-    <script src="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.js"></script>
-    <script>
-        window.addEventListener("load", function () {
-            window.cookieconsent.initialise({
-                "palette": {
-                    "popup": {
-                        "background": "#edeff5",
-                        "text": "#838391"
-                    },
-                    "button": {
-                        "background": "#4b81e8"
-                    }
-                }
-            })
-        });
-    </script>
-</body>
-</html>
+if __name__ == "__main__":
+    raise SystemExit(main())

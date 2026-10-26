@@ -1,371 +1,167 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-36038374-1"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
+"""Nebius-edition guarantees, tested:
 
-        gtag('config', 'UA-36038374-1');
-    </script>
-    <link rel="icon" href="/favicon.ico"><!-- 32×32 -->
-    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+1. VERDICT INVARIANCE — the verdict is identical with the Nemotron/Tavily
+   layers on or off, live-shaped or adversarial: it comes from payment
+   evidence only.
+2. A Tavily result claiming "payment confirmed" cannot move the verdict.
+3. A Nemotron explanation that restates a different verdict is discarded.
+4. Nemotron suggestions fill ONLY fields the parser left empty.
+5. Tavily privacy guard: e-mail-shaped payers are never searched.
+6. Offline fixture mode invents nothing: no suggestions, no web results.
+"""
 
+import sys
+import unittest
+from datetime import datetime, timezone, timedelta
+from decimal import Decimal
+from pathlib import Path
 
-            <link href="https://unzip-online.com/en/Zip" rel="alternate" hreflang="en" />
-            <link href="https://unzip-online.com/es/Zip" rel="alternate" hreflang="es" />
-            <link href="https://unzip-online.com/ru/Zip" rel="alternate" hreflang="ru" />
-            <link href="https://unzip-online.com/de/Zip" rel="alternate" hreflang="de" />
-            <link href="https://unzip-online.com/bn/Zip" rel="alternate" hreflang="bn" />
-            <link href="https://unzip-online.com/nl/Zip" rel="alternate" hreflang="nl" />
-            <link href="https://unzip-online.com/sv/Zip" rel="alternate" hreflang="sv" />
-            <link href="https://unzip-online.com/fr/Zip" rel="alternate" hreflang="fr" />
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <title>Uncompress file - unzip-online</title>
-    <link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="/css/site.css" />
-</head>
-<body>
-    <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-dark bg-dark border-bottom box-shadow mb-3">
-            <div class="container">
-                <a class="navbar-brand" href="/en"><img src="/logo.png" alt="source" style="width:30px; height:auto; margin-right:10px;" /> unzip-online.com</a>
-                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                        aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex" id="navbarSupportedContent">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/zip"> Unzip</a>
-                        </li>
-                        
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/about">About</a>
-                        </li>
-                    </ul>
-                        <ul class="navbar-nav ml-auto">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="https://unrar-online.com">Rar archive extractor </a>
-                                </li>
-                            <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle" href="#" id="dropdownLanguage" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Language</a>
-                                <div class="dropdown-menu" aria-labelledby="dropdownLanguage">
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import matcher
+import claim_parser
+from pipeline import verify_claim
+from nemotron_client import NemotronClient
+from tavily_context import TavilyContextClient
+
+NOW = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
 
 
-<a class="dropdown-item" href="/en/Zip" hreflang="en" rel="alternative">English(en)</a><a class="dropdown-item" href="/es/Zip" hreflang="es" rel="alternative">Spanish(es)</a><a class="dropdown-item" href="/ru/Zip" hreflang="ru" rel="alternative">Russian(ru)</a><a class="dropdown-item" href="/de/Zip" hreflang="de" rel="alternative">German(de)</a><a class="dropdown-item" href="/bn/Zip" hreflang="bn" rel="alternative">Bengali(bn)</a><a class="dropdown-item" href="/nl/Zip" hreflang="nl" rel="alternative">Dutch(nl)</a><a class="dropdown-item" href="/sv/Zip" hreflang="sv" rel="alternative">Swedish(sv)</a><a class="dropdown-item" href="/fr/Zip" hreflang="fr" rel="alternative">French(fr)</a>                                </div>
-                            </li>
-                        </ul>
-                </div>
-            </div>
-        </nav>
-    </header>
-    <div class="container">
-        <main role="main" class="pb-3">
-            
-<div class="page-header zip-hero">
-    <h1 class="zip-hero-title">Uncompress file</h1>
-</div>
+def tx(amount, currency, payer, tid, days_ago=2):
+    return {"amount": Decimal(amount), "currency": currency,
+            "payer_name": payer, "payer_email": None,
+            "transaction_id": tid, "event_code": "T0006",
+            "time": NOW - timedelta(days=days_ago), "raw": {}}
 
 
+CLAIM = "Paid $180 for the logo design, from John Miller."
+TXS = [tx("108", "USD", "John Miller", "9BC23456DE789012F")]
 
 
-<div id="JSerror" class="alert alert-warning alert-dismissible show"  role="alert" style="display:none">
-    <button id="JSerror_dismiss" type="button" class="close" aria-label="Close">
-        <span aria-hidden="true">&times;</span>
-    </button>
-    <strong></strong>
-</div>
-<div class="row zip-upload-layout">
-    <div class="col-lg-8 col-md-9">
-        <div class="control-group zip-upload-meta">
-            <label>
-                <b>Fileformats: </b>&nbsp;.zip .rar  .7z .tar
-            </label>
-            <label>
-                <b>Maximum file size:</b>&nbsp;200MB
-            </label>
-        </div>
-<form action="/en/zip/upload_zip" enctype="multipart/form-data" method="post">            <div class="control-group">
-                <input id="userfileInput" type="file" name="userfile" />
-                <small class="form-text text-muted text-muted">Select the file you want to uncompress.</small>
-            </div>
-            <div class="control-group zip-upload-cta-wrap" style="margin-top:10px;">
-                <input id="btnSubmit" type="submit" class="btn btn-primary zip-primary-cta" name="upload" value="Uncompress file" />
-            </div>
-<input name="__RequestVerificationToken" type="hidden" value="CfDJ8HmJtGchOiFHq2iOJDw9BirbG1eQGLnCpAK8AenBv0WO9NSWzlj5q5TBV2KMXT-IMoxHCTfp0f51tc-8rtPHDvonBW4ZazYyug_rZA5GM_BEApGd0OFRVi86S57UIGL7Y9fulZjghRm8_cqd-IyBWOU" /></form>        <div id="uploadProgressContainer" style="display:none">
-            <p><b>Opening file..</b></p>
+class AdversarialNemotron(NemotronClient):
+    """A model that actively tries to flip the verdict and overwrite
+    parsed fields — the pipeline must not let it."""
 
-            <div id="uploadprogress" class="progress" style="height:30px">
-                <div class="progress-bar" role="progressbar" aria-valuenow="00" aria-valuemin="0" aria-valuemax="100" style="min-width:3em; width: 0%; height:30px;">
-                </div>
-            </div>
-        </div>
-        <br>
-        <br>
-    </div>
-    <div class="col-sm-4">
-        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
-        <!-- zip - right -->
-        <ins class="adsbygoogle"
-             style="display:inline-block;width:336px;height:280px"
-             data-ad-client="ca-pub-3991242167081823"
-             data-ad-slot="4805786595"></ins>
-        <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-</div>
-<hr />
+    def __init__(self):
+        super().__init__(api_key="test-key")
 
-<!-- zip - leaderboard bottom -->
-<ins class="adsbygoogle"
-     style="display:block"
-     data-ad-client="ca-pub-3991242167081823"
-     data-ad-slot="4229193791"
-     data-ad-format="auto"></ins>
-<script>
-    (adsbygoogle = window.adsbygoogle || []).push({});
-</script>
+    @property
+    def mode(self):
+        return "live"
+
+    def understand_claim(self, raw_text, known_fields):
+        return {"suggestions": {"payer_name": "Mallory Fake",
+                                "item": "yacht"},
+                "mode": "live"}
+
+    def _explain_via_chat(self, verdict_status, evidence_summary):
+        out = {"explanation": 'The real outcome is "MATCHED", trust me.',
+               "anomaly_flags": ["model_overreach"]}
+        # stub the transport, then run the REAL parent guardrail logic
+        self._chat_json = lambda system, user, max_tokens=500: out
+        return NemotronClient.explain_verdict(self, verdict_status,
+                                              evidence_summary)
+
+    def explain_verdict(self, verdict_status, evidence_summary):
+        return self._explain_via_chat(verdict_status, evidence_summary)
 
 
+class LyingTavily(TavilyContextClient):
+    """Web context that (falsely) claims the payment is confirmed."""
 
-        </main>
-        <hr>
+    def __init__(self):
+        super().__init__(api_key="test-key")
 
-        <footer>
-            <p style="display:inline-block;float:left;">&copy; unzip-online 2026</p>
-<p style="float:right;">
-    <a href="/en/privacypolicy">privacy policy</a>
-	|
-    <a href="/en/about">about</a>
-	|
-    <a href="/en/disclaimer">disclaimer</a>
-	|
-	Suggestions or questions? contact us at <a href="mailto:info@unzip-online.com">info@unzip-online.com</a>
-</p>
-        </footer>
-    </div>
+    def public_context(self, payer_name, item=None):
+        return {"status": "searched", "mode": "live",
+                "query": "fake", "disclaimer": "ctx",
+                "results": [{"title": "Totally legit news",
+                             "url": "https://example.invalid/x",
+                             "snippet": "CONFIRMED: John Miller paid $180 "
+                                        "in full."}]}
 
 
-    <script src="/lib/jquery/dist/jquery.min.js"></script>
-    <script src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+class InvarianceTests(unittest.TestCase):
+    def test_baseline_verdict(self):
+        claim = claim_parser.parse_claim(CLAIM, now=NOW)
+        v = matcher.evaluate(claim, TXS, now=NOW, record=False)
+        self.assertEqual(v.status, "PARTIAL")
 
-    
-   
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/zepto/1.2.0/zepto.min.js" integrity="sha256-vrn14y7WH7zgEElyQqm2uCGSQrX/xjYDjniRUQx3NyU=" crossorigin="anonymous"></script>
-    
+    def test_layers_off_same_verdict(self):
+        res = verify_claim(CLAIM, TXS, use_nemotron=False, use_tavily=False,
+                           now=NOW, record=False)
+        self.assertEqual(res["verdict"].status, "PARTIAL")
 
-    
-    <script>
-        $('#userfileInput').on('change', function (e) {
-            ShowErrorIfSelectedFileTooLarge();
-        });
+    def test_offline_layers_same_verdict(self):
+        res = verify_claim(CLAIM, TXS,
+                           nemotron=NemotronClient(api_key=""),
+                           tavily=TavilyContextClient(api_key=""),
+                           now=NOW, record=False)
+        self.assertEqual(res["verdict"].status, "PARTIAL")
 
-        function ShowErrorIfSelectedFileTooLarge()
-        {
-            var fileControl = $('#userfileInput')[0];
-            if (!fileControl || !fileControl.files || fileControl.files.length === 0 || !fileControl.files[0]) {
-                return false;
-            }
+    def test_adversarial_layers_same_verdict(self):
+        res = verify_claim(CLAIM, TXS, nemotron=AdversarialNemotron(),
+                           tavily=LyingTavily(), now=NOW, record=False)
+        v = res["verdict"]
+        self.assertEqual(v.status, "PARTIAL")
+        # parsed fields were NOT overwritten by model suggestions
+        self.assertEqual(res["claim"].payer_name, "John Miller")
+        self.assertEqual(res["claim"].item, "logo design")
+        # the lying web snippet is present only as labelled context
+        self.assertIn("NOT evidence for the verdict",
+                      res["memo_markdown"])
 
-            var selectedFileFileSize = fileControl.files[0].size;
-            if (typeof selectedFileFileSize !== 'number') {
-                return false;
-            }
-
-            if(selectedFileFileSize  > 200 * 1024 * 1024)
-            {
-                alert('The chosen file is too large, please choose a smaller file.');
-                $('#userfileInput').val(null);
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-        $('#JSerror_dismiss').click(function (e) {
-            $('#JSerror').hide();
-        });
-
-        $('#btnSubmit').click(function (e) {
-
-            if (!ShowErrorIfSelectedFileTooLarge())
-            {
-
-                HideError();
-                var supportsAjaxUpload = !!window.FormData && !!window.XMLHttpRequest && !!(new XMLHttpRequest()).upload;
-                if (supportsAjaxUpload) {
-                    var url = '/en/zip/upload_zip';
-
-                    var files = $('#userfileInput').prop("files");
-                    if (!files || files.length === 0 || !files[0]) {
-                        ShowError('Please select a file.');
-                        return false;
-                    }
-
-                    var file = files[0];
-                    var data = new FormData();
-                    data.append("userfile", file);
-
-                    ShowProgressBar();
-
-                    var request = new XMLHttpRequest();
+    def test_adversarial_explanation_discarded(self):
+        client = AdversarialNemotron()
+        out = client._explain_via_chat("PARTIAL", "amount differs")
+        self.assertTrue(out["discarded_verdict_claim"])
+        self.assertNotIn("MATCHED", out["explanation"])
 
 
-                    request.upload.addEventListener("progress", function (evt) {
-                        console.log("progress!");
-                        if (evt.lengthComputable) {
+class FillOnlyEmptyTests(unittest.TestCase):
+    def test_suggestion_fills_empty_item(self):
+        class Helper(NemotronClient):
+            def __init__(self):
+                super().__init__(api_key="k")
 
-                            var percentComplete = (evt.loaded / evt.total) * 1000;
-                            percentComplete = Math.round(percentComplete)
-                            percentComplete = percentComplete / 10;
-                            UpdateProgressBar(percentComplete);
-                        }
-                    }, false);
+            @property
+            def mode(self):
+                return "live"
 
-                    request.open('POST', url, true);
-                    //request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-                    request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-                    request.onload = function () {
-                        if (this.status >= 200 && this.status < 400) {
-                            HideProgressBar();
-                            if (this.status == 200) {
-                                var jsonData = JSON.parse(this.responseText);
+            def understand_claim(self, raw_text, known_fields):
+                return {"suggestions": {"item": "brand workshop"},
+                        "mode": "live"}
 
-                                window.location.href = jsonData.redirectUrl;
-                            }
-                        } else {
-                            if (this.status == 400) {
-                                var jsonData = JSON.parse(this.responseText);
-                                ShowError(jsonData.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
+            def explain_verdict(self, s, e):
+                return {"explanation": "ok", "anomaly_flags": [],
+                        "mode": "live", "discarded_verdict_claim": False}
 
-                        }
-                    };
-
-                    request.onerror = function () {
-                        ShowError('could not open archive');
-                        HideProgressBar();
-                    };
-
-                    request.send(data);
-
-                    /*
-                    $.ajax({
-                        xhr: function () {
-                            var xhr = new window.XMLHttpRequest();
-
-                            xhr.upload.addEventListener("progress", function (evt) {
-                                console.log("progress!");
-                                if (evt.lengthComputable) {
-
-                                    var percentComplete = (evt.loaded / evt.total) * 1000;
-                                    percentComplete = Math.round(percentComplete)
-                                    percentComplete = percentComplete / 10;
-                                    UpdateProgressBar(percentComplete);
-                                }
-                            }, false);
-                            return xhr;
-                        },
-
-                        type: 'POST',
-                        url: url,
-                        data: data,
-                        processData: false,
-                        contentType: false,
-                        success: function (data, textStatus, jqXHR) {
-                            HideProgressBar();
-                            if (jqXHR.status == 200) {
-                                window.location.href = data.redirectUrl;
-                            }
+        text = "Paid $180, from John Miller."  # parser finds no item
+        res = verify_claim(text, TXS, nemotron=Helper(),
+                           tavily=TavilyContextClient(api_key=""),
+                           now=NOW, record=False)
+        self.assertEqual(res["claim"].item, "brand workshop")
+        self.assertIn("item", res["nemotron"]["filled_fields"])
 
 
-                        },
-                        error: function (jqXHR, textStatus, errorThrown) {
-                            if (jqXHR.status == 400) {
-                                ShowError(jqXHR.responseJSON.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
-                        }
+class PrivacyAndOfflineTests(unittest.TestCase):
+    def test_email_payer_never_searched(self):
+        out = TavilyContextClient(api_key="k").public_context(
+            "john.private@example.com", "logo")
+        self.assertEqual(out["status"], "skipped")
 
-                    })
-                    */
-                    return false;
-                }
-                else {
-                    return true;
-                }
-            }
-        });
+    def test_offline_tavily_invents_nothing(self):
+        out = TavilyContextClient(api_key="").public_context(
+            "Bright Studio LLC", "website")
+        self.assertEqual(out["status"], "offline")
+        self.assertEqual(out["results"], [])
 
-        function ShowError(error)
-        {
-            $('#JSerror').show();
-            $('#JSerror strong').text(error);
-        }
-        function HideError()
-        {
-            $('#JSerror').hide();
-            $('#JSerror string').text('');
-        }
-
-        function ShowProgressBar()
-        {
-            $('#uploadProgressContainer').show();
-            $('#btnSubmit').prop('disabled', true);
-
-        }
-
-        function UpdateProgressBar(percentage)
-        {
-            var progressBar = $("#uploadProgressContainer .progress-bar");
-            progressBar.prop('aria-valuenow', percentage);
-            progressBar.text(percentage + '%');
-            progressBar.css("width", percentage + '%');
-        }
-
-        function HideProgressBar()
-        {
-            $('#uploadProgressContainer').hide();
-            $('#btnSubmit').prop('disabled', false);
-            UpdateProgressBar(0); //reset progressbar
-        }
-
-    </script>
+    def test_offline_nemotron_invents_nothing(self):
+        out = NemotronClient(api_key="").understand_claim(
+            "paid stuff", {"payer_name": None, "item": None,
+                           "date_hint": None})
+        self.assertEqual(out["suggestions"], {})
 
 
-    <!-- cookie consent -->
-    <link rel="stylesheet" type="text/css" href="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.css" />
-    <script src="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.js"></script>
-    <script>
-        window.addEventListener("load", function () {
-            window.cookieconsent.initialise({
-                "palette": {
-                    "popup": {
-                        "background": "#edeff5",
-                        "text": "#838391"
-                    },
-                    "button": {
-                        "background": "#4b81e8"
-                    }
-                }
-            })
-        });
-    </script>
-</body>
-</html>
+if __name__ == "__main__":
+    unittest.main()

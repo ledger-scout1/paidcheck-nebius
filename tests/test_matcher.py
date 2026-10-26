@@ -1,371 +1,162 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-36038374-1"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
+"""Unit tests for the verdict engine: all four verdicts + anomaly flags."""
 
-        gtag('config', 'UA-36038374-1');
-    </script>
-    <link rel="icon" href="/favicon.ico"><!-- 32×32 -->
-    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+import os
+import sys
+import tempfile
+import unittest
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-            <link href="https://unzip-online.com/en/Zip" rel="alternate" hreflang="en" />
-            <link href="https://unzip-online.com/es/Zip" rel="alternate" hreflang="es" />
-            <link href="https://unzip-online.com/ru/Zip" rel="alternate" hreflang="ru" />
-            <link href="https://unzip-online.com/de/Zip" rel="alternate" hreflang="de" />
-            <link href="https://unzip-online.com/bn/Zip" rel="alternate" hreflang="bn" />
-            <link href="https://unzip-online.com/nl/Zip" rel="alternate" hreflang="nl" />
-            <link href="https://unzip-online.com/sv/Zip" rel="alternate" hreflang="sv" />
-            <link href="https://unzip-online.com/fr/Zip" rel="alternate" hreflang="fr" />
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <title>Uncompress file - unzip-online</title>
-    <link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="/css/site.css" />
-</head>
-<body>
-    <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-dark bg-dark border-bottom box-shadow mb-3">
-            <div class="container">
-                <a class="navbar-brand" href="/en"><img src="/logo.png" alt="source" style="width:30px; height:auto; margin-right:10px;" /> unzip-online.com</a>
-                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                        aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex" id="navbarSupportedContent">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/zip"> Unzip</a>
-                        </li>
-                        
-                        <li class="nav-item">
-                            <a class="nav-link" href="/en/about">About</a>
-                        </li>
-                    </ul>
-                        <ul class="navbar-nav ml-auto">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="https://unrar-online.com">Rar archive extractor </a>
-                                </li>
-                            <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle" href="#" id="dropdownLanguage" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Language</a>
-                                <div class="dropdown-menu" aria-labelledby="dropdownLanguage">
+import matcher  # noqa: E402
+from claim_parser import parse_claim  # noqa: E402
+
+NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
 
 
-<a class="dropdown-item" href="/en/Zip" hreflang="en" rel="alternative">English(en)</a><a class="dropdown-item" href="/es/Zip" hreflang="es" rel="alternative">Spanish(es)</a><a class="dropdown-item" href="/ru/Zip" hreflang="ru" rel="alternative">Russian(ru)</a><a class="dropdown-item" href="/de/Zip" hreflang="de" rel="alternative">German(de)</a><a class="dropdown-item" href="/bn/Zip" hreflang="bn" rel="alternative">Bengali(bn)</a><a class="dropdown-item" href="/nl/Zip" hreflang="nl" rel="alternative">Dutch(nl)</a><a class="dropdown-item" href="/sv/Zip" hreflang="sv" rel="alternative">Swedish(sv)</a><a class="dropdown-item" href="/fr/Zip" hreflang="fr" rel="alternative">French(fr)</a>                                </div>
-                            </li>
-                        </ul>
-                </div>
-            </div>
-        </nav>
-    </header>
-    <div class="container">
-        <main role="main" class="pb-3">
-            
-<div class="page-header zip-hero">
-    <h1 class="zip-hero-title">Uncompress file</h1>
-</div>
+def tx(tid="TXN00000000000001", amount="180", currency="USD",
+       payer_name="John Smith", payer_email="john@example.com", days_ago=1):
+    return {
+        "transaction_id": tid,
+        "event_code": "T0006",
+        "status": "S",
+        "amount": Decimal(amount),
+        "currency": currency,
+        "fee": Decimal("5.52"),
+        "time": NOW - timedelta(days=days_ago),
+        "payer_email": payer_email,
+        "payer_name": payer_name,
+        "subject": None,
+        "invoice_id": None,
+        "raw": {},
+    }
 
 
+class VerdictTests(unittest.TestCase):
+    def test_matched(self):
+        claim = parse_claim("Paid $180 for the logo yesterday, "
+                            "from John Smith", now=NOW)
+        v = matcher.evaluate(claim, [tx()], now=NOW)
+        self.assertEqual(v.status, matcher.MATCHED)
+        self.assertEqual(v.transaction["transaction_id"],
+                         "TXN00000000000001")
+
+    def test_matched_by_initial_name(self):
+        claim = parse_claim("Paid $180 for the logo, from J. Smith", now=NOW)
+        v = matcher.evaluate(claim, [tx()], now=NOW)
+        self.assertEqual(v.status, matcher.MATCHED)
+
+    def test_partial_amount_mismatch(self):
+        claim = parse_claim("Paid $175 for the logo, from John Smith",
+                            now=NOW)
+        v = matcher.evaluate(claim, [tx()], now=NOW)
+        self.assertEqual(v.status, matcher.PARTIAL)
+        self.assertIn("amount_mismatch", v.flags)
+
+    def test_digit_transposition_flag(self):
+        claim = parse_claim("Paid $108 for the logo, from John Smith",
+                            now=NOW)
+        v = matcher.evaluate(claim, [tx(amount="180")], now=NOW)
+        self.assertEqual(v.status, matcher.PARTIAL)
+        self.assertIn("possible_digit_transposition", v.flags)
+
+    def test_partial_currency_mismatch(self):
+        claim = parse_claim("Paid €180 for the logo, from John Smith",
+                            now=NOW)
+        v = matcher.evaluate(claim, [tx(currency="USD")], now=NOW)
+        self.assertEqual(v.status, matcher.PARTIAL)
+        self.assertIn("currency_mismatch", v.flags)
+
+    def test_partial_payer_mismatch(self):
+        claim = parse_claim("Paid $180 for the logo, from Jane Doe", now=NOW)
+        v = matcher.evaluate(claim, [tx()], now=NOW)
+        self.assertEqual(v.status, matcher.PARTIAL)
+        self.assertIn("payer_mismatch", v.flags)
+
+    def test_not_found(self):
+        claim = parse_claim("Paid $999 for a yacht, from John Smith", now=NOW)
+        v = matcher.evaluate(claim, [tx()], now=NOW)
+        self.assertEqual(v.status, matcher.NOT_FOUND)
+
+    def test_not_found_empty_ledger(self):
+        claim = parse_claim("Paid $180 for the logo, from John Smith",
+                            now=NOW)
+        v = matcher.evaluate(claim, [], now=NOW)
+        self.assertEqual(v.status, matcher.NOT_FOUND)
+
+    def test_outside_window_ignored(self):
+        claim = parse_claim("Paid $180 for the logo on 2026-10-20, "
+                            "from John Smith", now=NOW)
+        v = matcher.evaluate(claim, [tx(days_ago=20)], now=NOW)
+        self.assertEqual(v.status, matcher.NOT_FOUND)
+
+    def test_match_by_transaction_ref_outside_window(self):
+        ref = "8AB12345CD678901E"
+        claim = parse_claim(f"Paid $180 for the logo on 2026-10-20, "
+                            f"transaction {ref}", now=NOW)
+        v = matcher.evaluate(claim, [tx(tid=ref, days_ago=20)], now=NOW)
+        self.assertEqual(v.status, matcher.MATCHED)
+
+    def test_stale_window_flag(self):
+        old = NOW - timedelta(days=200)
+        claim = parse_claim("Paid $180 for the logo on "
+                            + old.date().isoformat() + ", from John Smith",
+                            now=NOW)
+        v = matcher.evaluate(claim, [], now=NOW)
+        self.assertIn("stale_window", v.flags)
+
+    def test_future_date_flag(self):
+        future = NOW + timedelta(days=10)
+        claim = parse_claim("Paid $180 for the logo on "
+                            + future.date().isoformat() + ", from John Smith",
+                            now=NOW)
+        v = matcher.evaluate(claim, [], now=NOW)
+        self.assertIn("future_date", v.flags)
 
 
-<div id="JSerror" class="alert alert-warning alert-dismissible show"  role="alert" style="display:none">
-    <button id="JSerror_dismiss" type="button" class="close" aria-label="Close">
-        <span aria-hidden="true">&times;</span>
-    </button>
-    <strong></strong>
-</div>
-<div class="row zip-upload-layout">
-    <div class="col-lg-8 col-md-9">
-        <div class="control-group zip-upload-meta">
-            <label>
-                <b>Fileformats: </b>&nbsp;.zip .rar  .7z .tar
-            </label>
-            <label>
-                <b>Maximum file size:</b>&nbsp;200MB
-            </label>
-        </div>
-<form action="/en/zip/upload_zip" enctype="multipart/form-data" method="post">            <div class="control-group">
-                <input id="userfileInput" type="file" name="userfile" />
-                <small class="form-text text-muted text-muted">Select the file you want to uncompress.</small>
-            </div>
-            <div class="control-group zip-upload-cta-wrap" style="margin-top:10px;">
-                <input id="btnSubmit" type="submit" class="btn btn-primary zip-primary-cta" name="upload" value="Uncompress file" />
-            </div>
-<input name="__RequestVerificationToken" type="hidden" value="CfDJ8HmJtGchOiFHq2iOJDw9BioEjnKLnbJgtppB5C94_x-geBMW5MbnHIwiyz8Ffot7Qwo7tXtjI9CDjsN8E0V6Hc78QBp_Rq-9GECNnCPWmdblhjDohcJ2CUcA7DCk7a4QTBkUF2YYC36HxMwSHJvCkSM" /></form>        <div id="uploadProgressContainer" style="display:none">
-            <p><b>Opening file..</b></p>
+class DuplicateTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = os.path.join(self.tmp.name, "claims.db")
 
-            <div id="uploadprogress" class="progress" style="height:30px">
-                <div class="progress-bar" role="progressbar" aria-valuenow="00" aria-valuemin="0" aria-valuemax="100" style="min-width:3em; width: 0%; height:30px;">
-                </div>
-            </div>
-        </div>
-        <br>
-        <br>
-    </div>
-    <div class="col-sm-4">
-        <script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
-        <!-- zip - right -->
-        <ins class="adsbygoogle"
-             style="display:inline-block;width:336px;height:280px"
-             data-ad-client="ca-pub-3991242167081823"
-             data-ad-slot="4805786595"></ins>
-        <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-    </div>
-</div>
-<hr />
+    def tearDown(self):
+        self.tmp.cleanup()
 
-<!-- zip - leaderboard bottom -->
-<ins class="adsbygoogle"
-     style="display:block"
-     data-ad-client="ca-pub-3991242167081823"
-     data-ad-slot="4229193791"
-     data-ad-format="auto"></ins>
-<script>
-    (adsbygoogle = window.adsbygoogle || []).push({});
-</script>
+    def test_duplicate_claim_on_same_transaction(self):
+        claim1 = parse_claim("Paid $180 for the logo, from John Smith",
+                             now=NOW)
+        v1 = matcher.evaluate(claim1, [tx()], db_path=self.db, now=NOW)
+        self.assertEqual(v1.status, matcher.MATCHED)
+        # A *different* claim text pointing at the same payment.
+        claim2 = parse_claim("I sent you $180 by PayPal, John Smith here, "
+                             "for the logo work", now=NOW)
+        v2 = matcher.evaluate(claim2, [tx()], db_path=self.db, now=NOW)
+        self.assertEqual(v2.status, matcher.DUPLICATE)
+        self.assertIn("duplicate_claim", v2.flags)
+
+    def test_same_claim_resubmitted_is_not_duplicate(self):
+        text = "Paid $180 for the logo, from John Smith"
+        claim1 = parse_claim(text, now=NOW)
+        matcher.evaluate(claim1, [tx()], db_path=self.db, now=NOW)
+        claim2 = parse_claim(text, now=NOW)
+        v2 = matcher.evaluate(claim2, [tx()], db_path=self.db, now=NOW)
+        self.assertEqual(v2.status, matcher.MATCHED)
+        self.assertIn("repeat_submission", v2.flags)
 
 
-
-        </main>
-        <hr>
-
-        <footer>
-            <p style="display:inline-block;float:left;">&copy; unzip-online 2026</p>
-<p style="float:right;">
-    <a href="/en/privacypolicy">privacy policy</a>
-	|
-    <a href="/en/about">about</a>
-	|
-    <a href="/en/disclaimer">disclaimer</a>
-	|
-	Suggestions or questions? contact us at <a href="mailto:info@unzip-online.com">info@unzip-online.com</a>
-</p>
-        </footer>
-    </div>
+class MemoTests(unittest.TestCase):
+    def test_memo_contains_verdict_and_evidence(self):
+        claim = parse_claim("Paid $180 for the logo, from John Smith",
+                            now=NOW)
+        v = matcher.evaluate(claim, [tx()], now=NOW)
+        md = matcher.memo_markdown(v, generated_at=NOW)
+        self.assertIn("MATCHED", md)
+        self.assertIn("TXN00000000000001", md)
+        rendered = matcher.memo_html(v, generated_at=NOW)
+        self.assertIn("MATCHED", rendered)
 
 
-    <script src="/lib/jquery/dist/jquery.min.js"></script>
-    <script src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-
-    
-   
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/zepto/1.2.0/zepto.min.js" integrity="sha256-vrn14y7WH7zgEElyQqm2uCGSQrX/xjYDjniRUQx3NyU=" crossorigin="anonymous"></script>
-    
-
-    
-    <script>
-        $('#userfileInput').on('change', function (e) {
-            ShowErrorIfSelectedFileTooLarge();
-        });
-
-        function ShowErrorIfSelectedFileTooLarge()
-        {
-            var fileControl = $('#userfileInput')[0];
-            if (!fileControl || !fileControl.files || fileControl.files.length === 0 || !fileControl.files[0]) {
-                return false;
-            }
-
-            var selectedFileFileSize = fileControl.files[0].size;
-            if (typeof selectedFileFileSize !== 'number') {
-                return false;
-            }
-
-            if(selectedFileFileSize  > 200 * 1024 * 1024)
-            {
-                alert('The chosen file is too large, please choose a smaller file.');
-                $('#userfileInput').val(null);
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-        $('#JSerror_dismiss').click(function (e) {
-            $('#JSerror').hide();
-        });
-
-        $('#btnSubmit').click(function (e) {
-
-            if (!ShowErrorIfSelectedFileTooLarge())
-            {
-
-                HideError();
-                var supportsAjaxUpload = !!window.FormData && !!window.XMLHttpRequest && !!(new XMLHttpRequest()).upload;
-                if (supportsAjaxUpload) {
-                    var url = '/en/zip/upload_zip';
-
-                    var files = $('#userfileInput').prop("files");
-                    if (!files || files.length === 0 || !files[0]) {
-                        ShowError('Please select a file.');
-                        return false;
-                    }
-
-                    var file = files[0];
-                    var data = new FormData();
-                    data.append("userfile", file);
-
-                    ShowProgressBar();
-
-                    var request = new XMLHttpRequest();
-
-
-                    request.upload.addEventListener("progress", function (evt) {
-                        console.log("progress!");
-                        if (evt.lengthComputable) {
-
-                            var percentComplete = (evt.loaded / evt.total) * 1000;
-                            percentComplete = Math.round(percentComplete)
-                            percentComplete = percentComplete / 10;
-                            UpdateProgressBar(percentComplete);
-                        }
-                    }, false);
-
-                    request.open('POST', url, true);
-                    //request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-                    request.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-                    request.onload = function () {
-                        if (this.status >= 200 && this.status < 400) {
-                            HideProgressBar();
-                            if (this.status == 200) {
-                                var jsonData = JSON.parse(this.responseText);
-
-                                window.location.href = jsonData.redirectUrl;
-                            }
-                        } else {
-                            if (this.status == 400) {
-                                var jsonData = JSON.parse(this.responseText);
-                                ShowError(jsonData.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
-
-                        }
-                    };
-
-                    request.onerror = function () {
-                        ShowError('could not open archive');
-                        HideProgressBar();
-                    };
-
-                    request.send(data);
-
-                    /*
-                    $.ajax({
-                        xhr: function () {
-                            var xhr = new window.XMLHttpRequest();
-
-                            xhr.upload.addEventListener("progress", function (evt) {
-                                console.log("progress!");
-                                if (evt.lengthComputable) {
-
-                                    var percentComplete = (evt.loaded / evt.total) * 1000;
-                                    percentComplete = Math.round(percentComplete)
-                                    percentComplete = percentComplete / 10;
-                                    UpdateProgressBar(percentComplete);
-                                }
-                            }, false);
-                            return xhr;
-                        },
-
-                        type: 'POST',
-                        url: url,
-                        data: data,
-                        processData: false,
-                        contentType: false,
-                        success: function (data, textStatus, jqXHR) {
-                            HideProgressBar();
-                            if (jqXHR.status == 200) {
-                                window.location.href = data.redirectUrl;
-                            }
-
-
-                        },
-                        error: function (jqXHR, textStatus, errorThrown) {
-                            if (jqXHR.status == 400) {
-                                ShowError(jqXHR.responseJSON.error);
-                            }
-                            else {
-                                ShowError('could not open archive');
-                            }
-                            HideProgressBar();
-                        }
-
-                    })
-                    */
-                    return false;
-                }
-                else {
-                    return true;
-                }
-            }
-        });
-
-        function ShowError(error)
-        {
-            $('#JSerror').show();
-            $('#JSerror strong').text(error);
-        }
-        function HideError()
-        {
-            $('#JSerror').hide();
-            $('#JSerror string').text('');
-        }
-
-        function ShowProgressBar()
-        {
-            $('#uploadProgressContainer').show();
-            $('#btnSubmit').prop('disabled', true);
-
-        }
-
-        function UpdateProgressBar(percentage)
-        {
-            var progressBar = $("#uploadProgressContainer .progress-bar");
-            progressBar.prop('aria-valuenow', percentage);
-            progressBar.text(percentage + '%');
-            progressBar.css("width", percentage + '%');
-        }
-
-        function HideProgressBar()
-        {
-            $('#uploadProgressContainer').hide();
-            $('#btnSubmit').prop('disabled', false);
-            UpdateProgressBar(0); //reset progressbar
-        }
-
-    </script>
-
-
-    <!-- cookie consent -->
-    <link rel="stylesheet" type="text/css" href="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.css" />
-    <script src="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.0.3/cookieconsent.min.js"></script>
-    <script>
-        window.addEventListener("load", function () {
-            window.cookieconsent.initialise({
-                "palette": {
-                    "popup": {
-                        "background": "#edeff5",
-                        "text": "#838391"
-                    },
-                    "button": {
-                        "background": "#4b81e8"
-                    }
-                }
-            })
-        });
-    </script>
-</body>
-</html>
+if __name__ == "__main__":
+    unittest.main()
