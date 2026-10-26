@@ -8,38 +8,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download extracted files and commit them
+      - name: Unzip source and commit files
         run: |
           set -euo pipefail
-          mkdir -p tests tools
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=0&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o app.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=1&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o claim_parser.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=2&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o matcher.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=3&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o paypal_client.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=4&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o seed_demo.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=5&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o SEEDING.md
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=6&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o README.md
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=7&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o LICENSE
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=8&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o requirements.txt
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=9&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o nemotron_client.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=10&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tavily_context.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=11&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o pipeline.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=12&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o demo_run.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=13&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o web_demo.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=14&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o CREDIT_BUDGET.md
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=15&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o UPDATE_EXPLANATION.md
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=16&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o FEEDBACK_DRAFT.md
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=17&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o Dockerfile
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=18&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o .env.example
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=19&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tests/__init__.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=20&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tests/test_matcher.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=21&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tests/test_claim_parser.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=22&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tests/test_paypal_client.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=23&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tests/test_unconfirmed.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=24&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tests/test_nebius_pipeline.py
-          curl -fsSL "https://unzip-online.com/en/Download/File?index=25&file=ZPS9IQQN4qGxipi1qmGddA%3D%3D" -o tools/smoke_test.py
+          curl -fsSL "https://raw.githubusercontent.com/ledger-scout1/paidcheck-nebius/main/nebius_push_paidcheck.zip" -o /tmp/paidcheck.zip
+          ls -l /tmp/paidcheck.zip
+          unzip -o /tmp/paidcheck.zip -d .
+          rm -f nebius_push_paidcheck.zip
           ls -l requirements.txt Dockerfile .env.example
           wc -c requirements.txt Dockerfile .env.example
+          test "$(wc -c < requirements.txt)" -eq 191
+          test "$(wc -c < Dockerfile)" -eq 104
+          test "$(wc -c < .env.example)" -eq 244
+          if head -n 1 app.py | grep -q DOCTYPE; then echo "HTML detected in app.py"; exit 1; fi
+          if head -n 1 .env.example | grep -q DOCTYPE; then echo "HTML detected in .env.example"; exit 1; fi
           find . -type f -not -path './.git/*' -not -path './.github/*' | sort
           test "$(find . -type f -not -path './.git/*' -not -path './.github/*' | wc -l)" -eq 26
           git config user.name "ledger-scout1"
