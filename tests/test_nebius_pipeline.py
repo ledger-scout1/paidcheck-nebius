@@ -5,7 +5,9 @@
    evidence only.
 2. A Tavily result claiming "payment confirmed" cannot move the verdict.
 3. A Nemotron explanation that restates a different verdict is discarded.
-4. Nemotron suggestions fill ONLY fields the parser left empty.
+4. Nemotron suggestions NEVER enter the verdict: they are recorded
+   separately as UNCONFIRMED, even for fields the parser left empty —
+   including the transaction window derived from the claimed date.
 5. Tavily privacy guard: e-mail-shaped payers are never searched.
 6. Offline fixture mode invents nothing: no suggestions, no web results.
 """
@@ -118,9 +120,12 @@ class InvarianceTests(unittest.TestCase):
         self.assertNotIn("MATCHED", out["explanation"])
 
 
-class FillOnlyEmptyTests(unittest.TestCase):
-    def test_suggestion_fills_empty_item(self):
-        class Helper(NemotronClient):
+class SuggestionBoundaryTests(unittest.TestCase):
+    """Suggestions are recorded, labelled UNCONFIRMED, and never enter
+    the verdict — not even through the payer check or the date window."""
+
+    def _stub(self, suggestions):
+        class Stub(NemotronClient):
             def __init__(self):
                 super().__init__(api_key="k")
 
@@ -129,19 +134,52 @@ class FillOnlyEmptyTests(unittest.TestCase):
                 return "live"
 
             def understand_claim(self, raw_text, known_fields):
-                return {"suggestions": {"item": "brand workshop"},
-                        "mode": "live"}
+                return {"suggestions": dict(suggestions), "mode": "live"}
 
             def explain_verdict(self, s, e):
                 return {"explanation": "ok", "anomaly_flags": [],
                         "mode": "live", "discarded_verdict_claim": False}
 
+        return Stub()
+
+    def test_suggestion_does_not_fill_claim(self):
         text = "Paid $180, from John Miller."  # parser finds no item
-        res = verify_claim(text, TXS, nemotron=Helper(),
-                           tavily=TavilyContextClient(api_key=""),
-                           now=NOW, record=False)
-        self.assertEqual(res["claim"].item, "brand workshop")
-        self.assertIn("item", res["nemotron"]["filled_fields"])
+        res = verify_claim(text, TXS, nemotron=self._stub(
+            {"item": "brand workshop"}),
+            tavily=TavilyContextClient(api_key=""),
+            now=NOW, record=False)
+        self.assertIsNone(res["claim"].item)
+        self.assertEqual(res["nemotron"]["suggestions"],
+                         {"item": "brand workshop"})
+        self.assertIn("UNCONFIRMED", res["memo_markdown"])
+
+    def test_wrong_payer_suggestion_does_not_change_verdict(self):
+        txs = [tx("180", "USD", "John Miller", "8AB12345CD678901E")]
+        text = "Paid $180."  # parser finds no payer and no date
+        baseline = verify_claim(text, txs, use_nemotron=False,
+                                use_tavily=False, now=NOW, record=False)
+        self.assertEqual(baseline["verdict"].status, "MATCHED")
+        res = verify_claim(text, txs, nemotron=self._stub(
+            {"payer_name": "Mallory Fake"}),
+            tavily=TavilyContextClient(api_key=""),
+            now=NOW, record=False)
+        self.assertEqual(res["verdict"].status, "MATCHED")
+        self.assertIsNone(res["claim"].payer_name)
+        self.assertEqual(res["nemotron"]["suggestions"],
+                         {"payer_name": "Mallory Fake"})
+        self.assertIn("UNCONFIRMED", res["memo_markdown"])
+
+    def test_wrong_date_suggestion_does_not_change_verdict(self):
+        txs = [tx("180", "USD", "John Miller", "8AB12345CD678901E")]
+        text = "Paid $180."  # parser finds no payer and no date
+        res = verify_claim(text, txs, nemotron=self._stub(
+            {"date_hint": "2020-01-01"}),
+            tavily=TavilyContextClient(api_key=""),
+            now=NOW, record=False)
+        self.assertEqual(res["verdict"].status, "MATCHED")
+        self.assertIsNone(res["claim"].claimed_date)
+        self.assertEqual(res["nemotron"]["suggestions"],
+                         {"date_hint": "2020-01-01"})
 
 
 class PrivacyAndOfflineTests(unittest.TestCase):
