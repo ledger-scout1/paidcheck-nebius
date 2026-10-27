@@ -6,6 +6,13 @@ credentials are configured, a claim carrying a transaction reference is
 additionally checked against the real sandbox — the fixture path is the
 default so the public demo can never touch a real account.
 
+Demonstration fixtures: the hosted demo re-anchors the seeded fixture
+transactions to (today - 2 days), the offset they were written with, so
+the demo keeps working after the original fixture dates age. Amounts,
+payers and ids are untouched. Every page labels these as fixtures, NOT
+live PayPal records; real payment-API records are never altered, and the
+fixture path is never presented as live verification.
+
 Credit protection (the Builder credits must survive judging, 1–15 Dec):
 - live Nemotron/Tavily calls are capped per day (DEMO_DAILY_LIVE_CAP,
   default 300); beyond the cap the demo transparently continues in
@@ -15,7 +22,7 @@ Credit protection (the Builder credits must survive judging, 1–15 Dec):
 
 import html
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from demo_run import SCENARIOS
@@ -33,7 +40,8 @@ verdict — try to make them.</p>
 <form method=post action=/verify>
 <textarea name=claim rows=3 cols=80>{sample}</textarea><br>
 <button type=submit>Verify claim</button></form>
-<p>Seeded fixture transactions: $180 from John Miller (logo design);
+<p>Demonstration fixtures — NOT live PayPal records (dates relative to
+today so the demo keeps working): $180 from John Miller (logo design);
 $108 from John Miller. Demo resets daily; no real accounts involved.</p>
 </body></html>"""
 
@@ -58,6 +66,11 @@ class Handler(BaseHTTPRequestHandler):
         txs = [t for _, _, t in SCENARIOS for t in t]
         # de-duplicate fixture transactions by id
         txs = list({t["transaction_id"]: t for t in txs}.values())
+        # Demonstration fixtures only: re-anchor to (today - 2 days),
+        # the offset the fixtures were written with. Amounts, payers
+        # and ids are untouched; real API records are never altered.
+        now = datetime.now(timezone.utc)
+        txs = [dict(t, time=now - timedelta(days=2)) for t in txs]
         live = _live_budget_left()
         if live:
             _state["live_calls"] += 1
@@ -67,6 +80,10 @@ class Handler(BaseHTTPRequestHandler):
         v = res["verdict"]
         page = ("<!doctype html><html><head><meta charset=utf-8>"
                 "<title>Verdict</title></head><body>"
+                "<p><b>Demonstration mode:</b> the transactions below are "
+                "seeded fixtures with dates relative to today, not live "
+                "PayPal records. The verdict logic is identical; only the "
+                "evidence is demonstrative.</p>"
                 f"<h1>Verdict: {html.escape(v.status)}</h1>"
                 f"<pre>{html.escape(res['memo_markdown'])}</pre>"
                 "<p><a href='/'>Back</a></p></body></html>")

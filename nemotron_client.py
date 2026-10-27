@@ -6,8 +6,10 @@ payment-API evidence. Nemotron has exactly two jobs:
 
 1. ``understand_claim`` — read a messy, free-text claim and *suggest* values
    for fields the deterministic parser left empty (payer name, item, date
-   hint). The pipeline fills only empty fields and records provenance, so a
-   model suggestion can never overwrite parsed payment facts.
+   hint). The pipeline records suggestions separately, labelled
+   UNCONFIRMED, and never feeds them to the verdict, so a model suggestion
+   can never overwrite parsed payment facts or move the verdict, even via
+   the transaction window.
 2. ``explain_verdict`` — given the ALREADY-DECIDED verdict and its evidence
    summary, write a plain-language explanation and surface anomaly patterns
    (digit transpositions, amount/currency mismatches, repeat-claim signs).

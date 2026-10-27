@@ -4,8 +4,10 @@ Order of operations is the product's core guarantee:
 
 1. The deterministic parser reads the claim.
 2. Nemotron (Token Factory) may *suggest* values for fields the parser left
-   empty. Suggestions never overwrite parsed values; every filled field is
-   recorded with its provenance.
+   empty. Suggestions are recorded separately, labelled UNCONFIRMED, and
+   are NEVER fed to the matcher — not even for the transaction window.
+   The verdict is computed from the deterministically parsed claim alone,
+   so a wrong or invented suggestion cannot change it.
 3. ``matcher.evaluate`` decides the verdict from PAYMENT API evidence only.
    This function is byte-identical to the PayPal-hackathon build — neither
    Nemotron output nor Tavily output is among its inputs.
@@ -44,7 +46,8 @@ def verify_claim(text, transactions, *, use_nemotron=True, use_tavily=True,
     """Run the full pipeline. ``transactions`` must come from a payment
     provider API (or its sandbox) — the only evidence the verdict sees."""
     now = now or datetime.now(timezone.utc)
-    result = {"nemotron": {"mode": "disabled", "filled_fields": []},
+    result = {"nemotron": {"mode": "disabled", "suggestions": {},
+                           "suggested_fields": []},
               "tavily": {"status": "disabled", "results": []}}
 
     claim = claim_parser.parse_claim(text, now=now)
@@ -58,29 +61,25 @@ def verify_claim(text, transactions, *, use_nemotron=True, use_tavily=True,
         except NemotronError as exc:
             und = {"suggestions": {}, "mode": nemo.mode,
                    "note": f"understanding layer unavailable: {exc}"}
-        filled = []
+        # Suggestions are recorded ONLY. The claim below stays exactly as
+        # the deterministic parser produced it, so no suggestion (right
+        # or wrong) can move the verdict — including via the transaction
+        # window that matcher.evaluate derives from the claimed date.
         sugg = und.get("suggestions", {})
+        suggestions = {}
         if claim.payer_name is None and sugg.get("payer_name"):
-            claim.payer_name = sugg["payer_name"]
-            filled.append("payer_name")
+            suggestions["payer_name"] = sugg["payer_name"]
         if claim.item is None and sugg.get("item"):
-            claim.item = sugg["item"]
-            filled.append("item")
+            suggestions["item"] = sugg["item"]
         if claim.claimed_date is None and sugg.get("date_hint"):
             try:
-                claim.claimed_date = datetime.strptime(
-                    sugg["date_hint"], "%Y-%m-%d").replace(
-                        tzinfo=timezone.utc)
-                filled.append("claimed_date")
-            except ValueError:
+                datetime.strptime(sugg["date_hint"], "%Y-%m-%d")
+                suggestions["date_hint"] = sugg["date_hint"]
+            except (ValueError, TypeError):
                 pass
-        if filled:
-            claim.notes.append(
-                "Fields suggested by Nemotron (Token Factory) and filled "
-                "because the deterministic parser left them empty: "
-                + ", ".join(filled))
         result["nemotron"] = {"mode": und.get("mode", nemo.mode),
-                              "filled_fields": filled}
+                              "suggestions": suggestions,
+                              "suggested_fields": sorted(suggestions)}
 
     # THE verdict — payment evidence only, original matcher, unmodified.
     verdict = matcher.evaluate(claim, transactions, db_path=db_path,
@@ -119,10 +118,13 @@ def render_memo(result):
         if nemo.get("anomaly_flags"):
             md += ("\n\nAnomaly patterns noted: "
                    + "; ".join(nemo["anomaly_flags"]))
-        if nemo.get("filled_fields"):
-            md += ("\n\nClaim fields filled from Nemotron suggestions "
-                   "(parser had left them empty): "
-                   + ", ".join(nemo["filled_fields"]))
+        if nemo.get("suggested_fields"):
+            pairs = ", ".join(
+                f"{f}={nemo['suggestions'][f]}"
+                for f in nemo["suggested_fields"])
+            md += ("\n\nNemotron suggestions (UNCONFIRMED — they did not "
+                   "affect the verdict, which was decided from the parsed "
+                   "claim and payment-API evidence only): " + pairs)
         if nemo.get("discarded_verdict_claim"):
             md += ("\n\nNote: an explanation draft inconsistent with the "
                    "decided verdict was discarded by the guardrail.")
