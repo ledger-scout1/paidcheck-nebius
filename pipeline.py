@@ -42,13 +42,17 @@ def _evidence_summary(verdict):
 
 def verify_claim(text, transactions, *, use_nemotron=True, use_tavily=True,
                  nemotron=None, tavily=None, db_path=None, now=None,
-                 record=True):
-    """Run the full pipeline. ``transactions`` must come from a payment
-    provider API (or its sandbox) — the only evidence the verdict sees."""
+                 record=True, evidence_source="paypal_sandbox"):
+    """Run the full pipeline. ``transactions`` is the evidence the verdict
+    sees: normally records from a payment provider API (or its sandbox).
+    The hosted demonstration passes seeded fixtures instead and MUST say
+    so via ``evidence_source="fixtures"``, so the memo labels them as
+    simulated data — never as API or sandbox records."""
     now = now or datetime.now(timezone.utc)
     result = {"nemotron": {"mode": "disabled", "suggestions": {},
                            "suggested_fields": []},
-              "tavily": {"status": "disabled", "results": []}}
+              "tavily": {"status": "disabled", "results": []},
+              "evidence_source": evidence_source}
 
     claim = claim_parser.parse_claim(text, now=now)
 
@@ -107,14 +111,36 @@ def verify_claim(text, transactions, *, use_nemotron=True, use_tavily=True,
 
 def render_memo(result):
     verdict = result["verdict"]
-    md = matcher.memo_markdown(verdict)
+    simulated = result.get("evidence_source") == "fixtures"
+    md = matcher.memo_markdown(
+        verdict,
+        evidence_source=result.get("evidence_source", "paypal_sandbox"))
     nemo = result.get("nemotron", {})
     if nemo.get("explanation"):
-        md += (
-            "\n\n## AI explanation — Nemotron on Nebius Token Factory\n"
-            "_This section explains the verdict above in plain language. "
-            "It did not decide it: the verdict comes only from payment-API "
-            "evidence._\n\n" + nemo["explanation"])
+        if simulated:
+            intro = ("_This section explains the verdict above in plain "
+                     "language. It did not decide it: the verdict comes "
+                     "only from the demonstration evidence above — "
+                     "simulated fixture data, not live payment records._")
+        else:
+            intro = ("_This section explains the verdict above in plain "
+                     "language. It did not decide it: the verdict comes "
+                     "only from payment-API evidence._")
+        explanation = nemo["explanation"]
+        if explanation.startswith("Explanation layer unavailable"):
+            source = ("_Explanation source: the live Nemotron call failed "
+                      "— fallback notice below._")
+        elif nemo.get("mode") == "live":
+            source = ("_Explanation source: live Nemotron call (Nebius "
+                      "Token Factory)._")
+        elif nemo.get("mode") == "offline_fixture":
+            source = ("_Explanation source: offline fixture text — no "
+                      "live model call was made._")
+        else:
+            source = ""
+        md += ("\n\n## AI explanation — Nemotron on Nebius Token Factory\n"
+               + intro + ("\n\n" + source if source else "")
+               + "\n\n" + explanation)
         if nemo.get("anomaly_flags"):
             md += ("\n\nAnomaly patterns noted: "
                    + "; ".join(nemo["anomaly_flags"]))
@@ -122,9 +148,12 @@ def render_memo(result):
             pairs = ", ".join(
                 f"{f}={nemo['suggestions'][f]}"
                 for f in nemo["suggested_fields"])
+            decided_from = ("the demonstration evidence only"
+                            if simulated else
+                            "payment-API evidence only")
             md += ("\n\nNemotron suggestions (UNCONFIRMED — they did not "
                    "affect the verdict, which was decided from the parsed "
-                   "claim and payment-API evidence only): " + pairs)
+                   f"claim and {decided_from}): " + pairs)
         if nemo.get("discarded_verdict_claim"):
             md += ("\n\nNote: an explanation draft inconsistent with the "
                    "decided verdict was discarded by the guardrail.")
@@ -134,6 +163,7 @@ def render_memo(result):
                "_Informational only — NOT evidence for the verdict. "
                "Web pages cannot confirm or deny a private payment._\n")
         if tav["status"] == "searched":
+            md += "\n_Search source: live Tavily search of the public web._"
             for r in tav["results"]:
                 md += f"\n- [{r['title']}]({r['url']}) — {r['snippet']}"
             if not tav["results"]:

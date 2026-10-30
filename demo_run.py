@@ -25,7 +25,7 @@ def tx(amount, currency, payer, tid, days_ago=2):
 
 
 SCENARIOS = [
-    ("MATCHED — a true claim, exactly as in the PayPal sandbox demo",
+    ("MATCHED — a true claim (seeded fixture, sandbox-shaped)",
      "Hi, I paid $180 for the logo design yesterday. Transaction from "
      "John Miller, thanks!",
      [tx("180", "USD", "John Miller", "8AB12345CD678901E")]),
@@ -41,7 +41,8 @@ SCENARIOS = [
 
 def main():
     for title, text, txs in SCENARIOS:
-        res = verify_claim(text, txs, now=NOW, record=False)
+        res = verify_claim(text, txs, now=NOW, record=False,
+                           evidence_source="fixtures")
         v = res["verdict"]
         print("=" * 72)
         print(title)

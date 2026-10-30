@@ -395,15 +395,39 @@ def _tx_rows(tx: Optional[dict]) -> list:
     return [(k, v) for k, v in rows if v not in (None, "")]
 
 
-def memo_markdown(verdict: Verdict, *, generated_at: Optional[datetime] = None
+def memo_markdown(verdict: Verdict, *, generated_at: Optional[datetime] = None,
+                  evidence_source: str = "paypal_sandbox"
                   ) -> str:
     generated_at = generated_at or datetime.now(timezone.utc)
     claim = verdict.claim
+    simulated = evidence_source == "fixtures"
+    if simulated:
+        generated_note = ("(SIMULATED demonstration evidence — seeded "
+                          "fixtures, not PayPal records)")
+        evidence_heading = "## Simulated evidence (demonstration fixtures)"
+        error_heading = "## Error"
+        no_evidence = ("No evidence could be gathered: the evidence "
+                       "search did not complete (see the error below).")
+        footer = ("_Produced by PaidCheck in demonstration mode. The "
+                  "evidence above is simulated fixture data, seeded "
+                  "locally — it was not read from PayPal or any payment "
+                  "API. The verification logic is identical; only the "
+                  "evidence is demonstrative._")
+    else:
+        generated_note = "(PayPal SANDBOX evidence)"
+        evidence_heading = "## PayPal evidence"
+        error_heading = "## API error"
+        no_evidence = ("No evidence could be gathered: the PayPal search "
+                       "did not complete (see the API error below).")
+        footer = ("_Produced by PaidCheck against the PayPal sandbox "
+                  "(api-m.sandbox.paypal.com). Sandbox transactions use "
+                  "test money; the verification logic is identical to "
+                  "production._")
     lines = [
         "# PaidCheck — Payment Claim Verification Memo",
         "",
         f"**Verdict: {verdict.status}**",
-        f"Generated: {generated_at.isoformat()} (PayPal SANDBOX evidence)",
+        f"Generated: {generated_at.isoformat()} {generated_note}",
         "",
         "## The claim",
         f"> {claim.raw_text.strip()}",
@@ -413,21 +437,20 @@ def memo_markdown(verdict: Verdict, *, generated_at: Optional[datetime] = None
         f"- Claimed date: {claim.claimed_date.date().isoformat() if claim.claimed_date else '—'}",
         f"- Item: {claim.item or '—'}",
         "",
-        "## PayPal evidence",
+        evidence_heading,
     ]
     rows = _tx_rows(verdict.transaction)
     if rows:
         lines += ["| Field | Value |", "|---|---|"]
         lines += [f"| {k} | {v} |" for k, v in rows]
     elif verdict.status == UNCONFIRMED:
-        lines.append("No evidence could be gathered: the PayPal search "
-                     "did not complete (see the API error below).")
+        lines.append(no_evidence)
     else:
         lines.append("No matching transaction was found in the window "
                      f"({verdict.candidates_considered} transactions "
                      "considered).")
     if verdict.error:
-        lines += ["", "## API error", "```json",
+        lines += ["", error_heading, "```json",
                   json.dumps(verdict.error, indent=2, default=str),
                   "```"]
     if verdict.differences:
@@ -438,9 +461,7 @@ def memo_markdown(verdict: Verdict, *, generated_at: Optional[datetime] = None
         lines += ["", "## Anomaly flags",
                   *[f"- `{f}`" for f in verdict.flags]]
     lines += ["", "## Explanation", verdict.explanation, "",
-              "_Produced by PaidCheck against the PayPal sandbox "
-              "(api-m.sandbox.paypal.com). Sandbox transactions use test "
-              "money; the verification logic is identical to production._"]
+              footer]
     return "\n".join(lines) + "\n"
 
 
